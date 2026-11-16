@@ -88,6 +88,114 @@ export function Stepper({ value, min, max, onChange }: { value: number; min: num
   );
 }
 
+/** Single-choice buttons; tapping the selected one clears it. */
+export function ChipGroup({
+  options,
+  value,
+  onChange,
+  label,
+}: {
+  options: string[];
+  value: string;
+  onChange: (v: string) => void;
+  label: string;
+}) {
+  return (
+    <div className="chips" role="radiogroup" aria-label={label}>
+      {options.map((o) => (
+        <button
+          key={o}
+          type="button"
+          role="radio"
+          aria-checked={value === o}
+          className={value === o ? "chip-btn on" : "chip-btn"}
+          onClick={() => onChange(value === o ? "" : o)}
+        >
+          {o}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** Multi-value tags with type-ahead suggestions. */
+export function TagInput({
+  tags,
+  onChange,
+  suggestions,
+  placeholder,
+  label,
+}: {
+  tags: string[];
+  onChange: (tags: string[]) => void;
+  suggestions: (query: string, exclude: string[]) => string[];
+  placeholder?: string;
+  label: string;
+}) {
+  const [q, setQ] = useState("");
+  // Track the latest tags so quick successive taps never drop one.
+  const latest = useRef(tags);
+  latest.current = tags;
+  const add = (t: string) => {
+    const v = t.trim().replace(/,$/, "").trim();
+    const current = latest.current;
+    if (!v || current.some((x) => x.toLowerCase() === v.toLowerCase())) return setQ("");
+    latest.current = [...current, v];
+    onChange(latest.current);
+    setQ("");
+  };
+  const list = suggestions(q, tags);
+  return (
+    <div className="tag-input">
+      {tags.length > 0 && (
+        <div className="tags">
+          {tags.map((t) => (
+            <span key={t} className="tag">
+              {t}
+              <button type="button" aria-label={`Remove ${t}`} onClick={() => onChange(tags.filter((x) => x !== t))}>×</button>
+            </span>
+          ))}
+        </div>
+      )}
+      <input
+        value={q}
+        aria-label={label}
+        placeholder={placeholder}
+        autoComplete="off"
+        autoCapitalize="none"
+        onChange={(e) => {
+          const v = e.target.value;
+          if (v.endsWith(",")) add(v);
+          else setQ(v);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            add(q);
+          } else if (e.key === "Backspace" && !q && tags.length) {
+            onChange(tags.slice(0, -1));
+          }
+        }}
+      />
+      {list.length > 0 && (
+        <div className="suggestions">
+          {list.map((s) => (
+            <button key={s} type="button" className="suggestion" onClick={() => add(s)}>+ {s}</button>
+          ))}
+          {q.trim() && !list.some((s) => s.toLowerCase() === q.trim().toLowerCase()) && (
+            <button type="button" className="suggestion new" onClick={() => add(q)}>+ “{q.trim()}”</button>
+          )}
+        </div>
+      )}
+      {list.length === 0 && q.trim() && (
+        <div className="suggestions">
+          <button type="button" className="suggestion new" onClick={() => add(q)}>+ “{q.trim()}”</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function TypeDot({ type }: { type: string | null }) {
   const cls = (type ?? "other").toLowerCase().replace(/[^a-z]/g, "");
   return <span className={`dot t-${cls}`} title={type ?? ""} aria-hidden />;

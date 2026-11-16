@@ -17,6 +17,7 @@ export default function WineDetail({ id }: { id: string }) {
   const toast = useToast();
   const [busy, setBusy] = useState(false);
   const [dialog, setDialog] = useState<Dialog>(null);
+  const [justOpened, setJustOpened] = useState(false);
 
   const wine = data.wines.find((w) => w.wineId === id);
   if (!wine) {
@@ -61,12 +62,20 @@ export default function WineDetail({ id }: { id: string }) {
     }
   }
 
-  const openBottle = (l: Location) =>
-    act(
-      () => adjustBottles(itemId, id, { [l]: -1 }),
+  const openBottle = async (l: Location) => {
+    await act(
+      async () => {
+        const w = await adjustBottles(itemId, id, { [l]: -1 });
+        setJustOpened(true);
+        return w;
+      },
       `Opened a bottle from ${l}. Enjoy!`,
-      () => adjustBottles(itemId, id, { [l]: 1 }),
+      async () => {
+        setJustOpened(false);
+        return adjustBottles(itemId, id, { [l]: 1 });
+      },
     );
+  };
 
   const linked = data.tastings.filter((t) => t.wineId === id);
   const likely = data.tastings.filter(
@@ -90,6 +99,13 @@ export default function WineDetail({ id }: { id: string }) {
         </div>
         {wine.status === "NYA" && <span className="badge">Not yet arrived</span>}
       </section>
+
+      {justOpened && (
+        <a className="card prompt-card" href={href(`note/new/wine/${id}`)}>
+          <strong>✍ Write a tasting note</strong>
+          <span className="muted">while it's in the glass →</span>
+        </a>
+      )}
 
       <section className="card">
         <h2>Bottles</h2>
@@ -147,7 +163,10 @@ export default function WineDetail({ id }: { id: string }) {
       </section>
 
       <section className="card">
-        <h2>Tasting notes ({linked.length + likely.length})</h2>
+        <div className="card-head">
+          <h2>Tasting notes ({linked.length + likely.length})</h2>
+          <button onClick={() => go(`note/new/wine/${id}`)}>✍ Write a note</button>
+        </div>
         {linked.length + likely.length === 0 && <p className="muted">No tasting notes for this wine yet.</p>}
         {linked.map((t) => (
           <TastingRow key={t.tastingId} t={t} />
@@ -237,7 +256,7 @@ function Fact({ label, value }: { label: string; value: string | number | null |
 
 function TastingRow({ t }: { t: Tasting }) {
   return (
-    <div className="tasting-row">
+    <a className="tasting-row note-link" href={href(`note/${t.tastingId}`)}>
       <div className="tasting-meta">
         <strong>{t.score ?? "–"}</strong>
         <span className="muted">{t.dateTasted ?? t.yearTasted}</span>
@@ -246,7 +265,7 @@ function TastingRow({ t }: { t: Tasting }) {
       {t.nose && <p className="tasting-text"><span className="muted">Nose:</span> {t.nose}</p>}
       {t.taste && t.taste !== t.nose && <p className="tasting-text"><span className="muted">Palate:</span> {t.taste}</p>}
       {t.note && <p className="tasting-text">{t.note}</p>}
-    </div>
+    </a>
   );
 }
 

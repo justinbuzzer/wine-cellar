@@ -70,6 +70,8 @@ interface Store {
   reload(): Promise<void>;
   /** Replace (or add) one wine in the app's copy after a successful write. */
   putWine(w: Wine): void;
+  /** Replace (or add) one tasting note after a successful write. */
+  putTasting(t: Tasting): void;
   changeFile(): void;
 }
 
@@ -178,6 +180,14 @@ export function WorkbookGate({ children }: { children: ReactNode }) {
           ? p.data.wines.map((x) => (x.wineId === w.wineId ? w : x))
           : [...p.data.wines, w];
         return { kind: "loaded", data: { ...p.data, wines } };
+      }),
+    putTasting: (t) =>
+      setPhase((p) => {
+        if (p.kind !== "loaded") return p;
+        const tastings = p.data.tastings.some((x) => x.tastingId === t.tastingId)
+          ? p.data.tastings.map((x) => (x.tastingId === t.tastingId ? t : x))
+          : [...p.data.tastings, t];
+        return { kind: "loaded", data: { ...p.data, tastings } };
       }),
     changeFile: () => {
       storeItemId(null);

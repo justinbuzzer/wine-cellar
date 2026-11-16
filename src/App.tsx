@@ -10,6 +10,9 @@ import Diagnostics from "./views/Diagnostics";
 import WineDetail from "./views/WineDetail";
 import WineForm from "./views/WineForm";
 import WineList from "./views/WineList";
+import NoteForm from "./views/NoteForm";
+import NoteView from "./views/NoteView";
+import Notes from "./views/Notes";
 
 export default function App({ account }: { account: AccountInfo | null }) {
   if (!account) {
@@ -51,7 +54,12 @@ const TABS = [
 
 function Shell({ account, tabs, children }: { account?: AccountInfo; tabs?: boolean; children: ReactNode }) {
   const route = useRoute();
-  const section = route[0] === "wine" || route[0] === "add" || route[0] === "edit" || !route[0] ? "cellar" : route[0];
+  const section =
+    route[0] === "wine" || route[0] === "add" || route[0] === "edit" || !route[0]
+      ? "cellar"
+      : route[0] === "note"
+        ? "notes"
+        : route[0];
   return (
     <div className="app">
       <header className="topbar">
@@ -95,7 +103,16 @@ function TestBanner() {
 }
 
 function Routes() {
-  const [page, arg] = useRoute();
+  const [page, arg, sub, subArg] = useRoute();
+  if (page === "note") {
+    if (arg === "new") {
+      if (sub === "wine") return <NoteForm key={`new-w-${subArg}`} wineId={subArg} />;
+      if (sub === "from") return <NoteForm key={`new-t-${subArg}`} fromId={subArg} />;
+      return <NoteForm key="new" />;
+    }
+    if (arg && sub === "edit") return <NoteForm key={`edit-${arg}`} editId={arg} />;
+    if (arg) return <NoteView key={arg} id={arg} />;
+  }
   switch (page) {
     case undefined:
     case "cellar":
@@ -109,20 +126,10 @@ function Routes() {
     case "list":
       return <WineList />;
     case "notes":
-      return <ComingSoon title="Tasting notes" step="steps 4–5" text="Quick note entry with your WSET scales, and search across all your past notes." />;
+      return <Notes />;
     case "diagnostics":
       return <Diagnostics />;
     default:
       return <Cellar />;
   }
-}
-
-function ComingSoon({ title, step, text }: { title: string; step: string; text: string }) {
-  return (
-    <section className="card center">
-      <h2>{title}</h2>
-      <p className="muted">Coming in {step}.</p>
-      <p>{text}</p>
-    </section>
-  );
 }
