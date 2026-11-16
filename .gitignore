@@ -1,0 +1,13 @@
+node_modules/
+dist/
+.env*
+*.log
+
+# Never commit wine data — it lives in OneDrive behind your sign-in.
+*.xlsx
+*.xlsm
+*.xls
+*.csv
+
+# Local Claude/editor settings
+.claude/settings.local.json
