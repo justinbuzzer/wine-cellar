@@ -283,6 +283,31 @@ button.small { padding: 6px 12px; }
   text-decoration: none; color: inherit; border-color: var(--accent); background: var(--chip);
 }
 
+/* ---- step 5: note search ------------------------------------------------- */
+
+.search-row { display: flex; gap: 8px; }
+.search-row .search { flex: 1; }
+.search-row .primary { flex: none; }
+.filter-bar { display: flex; gap: 8px; }
+.filter-bar button.on { border-color: var(--accent); color: var(--accent); font-weight: 600; }
+.filter-bar select {
+  font: inherit; color: var(--text); background: var(--surface); border: 1px solid var(--border);
+  border-radius: 8px; padding: 8px 10px; margin-left: auto;
+}
+.filters input {
+  font: inherit; color: var(--text); background: var(--surface); border: 1px solid var(--border);
+  border-radius: 8px; padding: 9px 10px; width: 100%;
+}
+.notes-list { padding-top: 4px; padding-bottom: 4px; }
+.notes-list .tasting-row:first-child { border-top: none; }
+.result-head { display: flex; gap: 12px; align-items: flex-start; }
+.result-score { font-size: 1.4rem; font-weight: 700; color: var(--accent); min-width: 2ch; line-height: 1.2; }
+.result-wine { min-width: 0; }
+.result .tasting-text { margin-left: calc(2ch + 12px + 0.2rem); }
+mark { background: #ffe58a; color: inherit; border-radius: 2px; padding: 0 1px; }
+@media (prefers-color-scheme: dark) { mark { background: #6b5200; } }
+.show-more { width: 100%; margin: 8px 0 4px; }
+
 /* ---- step 3: wine list --------------------------------------------------- */
 
 .wl-controls-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
