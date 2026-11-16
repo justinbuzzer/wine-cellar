@@ -232,10 +232,8 @@ export function toTasting(r: Record<string, Cell>): Tasting {
 
 export function formatPrice(p: number | null, currency: string): string {
   if (p === null) return "";
-  return new Intl.NumberFormat("en-SG", {
-    style: "currency",
-    currency,
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 2,
-  }).format(p);
+  const amount = new Intl.NumberFormat("en-SG", { minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(p);
+  // en-SG renders SGD as a bare "$"; spell it out so it's unambiguous.
+  if (currency === "SGD") return `S$${amount}`;
+  return new Intl.NumberFormat("en-SG", { style: "currency", currency, minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(p);
 }

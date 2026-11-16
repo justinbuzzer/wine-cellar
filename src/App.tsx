@@ -9,6 +9,7 @@ import Cellar from "./views/Cellar";
 import Diagnostics from "./views/Diagnostics";
 import WineDetail from "./views/WineDetail";
 import WineForm from "./views/WineForm";
+import WineList from "./views/WineList";
 
 export default function App({ account }: { account: AccountInfo | null }) {
   if (!account) {
@@ -106,7 +107,7 @@ function Routes() {
     case "edit":
       return <WineForm key={`edit-${arg}`} id={arg} />;
     case "list":
-      return <ComingSoon title="Wine list" step="step 3" text="A restaurant-style list of your cellar, grouped by type and region, printable to PDF." />;
+      return <WineList />;
     case "notes":
       return <ComingSoon title="Tasting notes" step="steps 4–5" text="Quick note entry with your WSET scales, and search across all your past notes." />;
     case "diagnostics":
