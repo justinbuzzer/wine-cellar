@@ -209,8 +209,6 @@ button.small { padding: 6px 12px; }
 .row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .form-errors { color: var(--warn); margin: 0; padding-left: 18px; }
 
-.upgrade details { margin: 12px 0; }
-.grid tr.warn td { color: var(--warn); }
 
 @media (max-width: 560px) {
   .facts { grid-template-columns: 1fr; gap: 2px; }

@@ -1,6 +1,6 @@
 // Microsoft Graph client: OneDrive file lookup + Excel workbook reads and writes.
 //
-// Write safety rules (enforced by callers in inventory.ts / upgrade.ts):
+// Write safety rules (enforced by callers in inventory.ts):
 //  - writes go through a workbook session (createSession/closeSession)
 //  - only individual cells are written, never whole rows, so formulas elsewhere survive
 //  - the target row is re-located by WineID immediately before every write
@@ -208,11 +208,6 @@ export class Workbook {
   /** Appends a row to a table. Returns the new row's 0-based index and its values. */
   async addRow(table: string, row: Cell[]): Promise<{ index: number; values: Cell[][] }> {
     return this.req("POST", `/tables/${enc(table)}/rows`, { values: [row.map((v) => v ?? "")] });
-  }
-
-  /** Appends a column. `values` = header followed by one value per data row. */
-  async addColumn(table: string, values: Cell[]): Promise<void> {
-    await this.req("POST", `/tables/${enc(table)}/columns`, { values: values.map((v) => [v ?? ""]) });
   }
 }
 

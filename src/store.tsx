@@ -24,7 +24,7 @@ export interface WorkbookData {
   timings: { label: string; ms: number }[];
   totalMs: number;
   /** Inventory has "Qty K Cellars" and "Qty Home" columns. */
-  upgraded: boolean;
+  hasLocations: boolean;
 }
 
 export function describeError(e: unknown): string {
@@ -61,7 +61,7 @@ export async function loadWorkbook(file: DriveItem): Promise<WorkbookData> {
       { label: `${config.lists.length} dropdown lists (slowest)`, ms: Math.max(...lists.map((l) => l.ms)) },
     ],
     totalMs: Math.round(performance.now() - start),
-    upgraded: invTable.headers.includes(COL_KC) && invTable.headers.includes(COL_HOME),
+    hasLocations: invTable.headers.includes(COL_KC) && invTable.headers.includes(COL_HOME),
   };
 }
 

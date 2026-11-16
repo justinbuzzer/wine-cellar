@@ -43,9 +43,9 @@ function locate(snap: TableSnapshot, wineId: string): Located {
   };
 }
 
-function requireUpgraded(headers: string[]) {
+function requireLocations(headers: string[]) {
   if (!headers.includes(COL_KC) || !headers.includes(COL_HOME)) {
-    throw new Error("The spreadsheet hasn't been upgraded for K Cellars / Home yet (see Diagnostics).");
+    throw new Error(`The Inventory table needs "${COL_KC}" and "${COL_HOME}" columns.`);
   }
 }
 
@@ -73,7 +73,7 @@ function result(at: Located): Wine {
 export function adjustBottles(itemId: string, wineId: string, delta: Partial<Record<Location, number>>): Promise<Wine> {
   return withSession(itemId, async (wb) => {
     const at = locate(await wb.readTable(TABLE), wineId);
-    requireUpgraded(at.headers);
+    requireLocations(at.headers);
     const changes: Record<string, Cell> = {};
     for (const [loc, d] of Object.entries(delta) as [Location, number][]) {
       const colName = LOCATION_COLUMN[loc];
@@ -130,11 +130,11 @@ export function addWine(
       return hit ? Math.max(m, Number(hit[1])) : m;
     }, 0);
     const wineId = `W${String(maxId + 1).padStart(4, "0")}`;
-    const upgraded = headers.includes(COL_KC) && headers.includes(COL_HOME);
+    const hasLocations = headers.includes(COL_KC) && headers.includes(COL_HOME);
 
     const row: Cell[] = headers.map((h) => {
       if (h === "WineID") return wineId;
-      if (h === "Qty") return upgraded ? QTY_FORMULA : bottles.kc + bottles.home;
+      if (h === "Qty") return hasLocations ? QTY_FORMULA : bottles.kc + bottles.home;
       if (h === COL_KC) return bottles.kc;
       if (h === COL_HOME) return bottles.home;
       return fields[h] ?? "";
@@ -144,7 +144,7 @@ export function addWine(
     const qtyCol = headers.indexOf("Qty");
     const written = added.values?.[0];
     // If Excel stored the Qty formula as text, write it again explicitly as a formula.
-    if (upgraded && qtyCol >= 0 && typeof written?.[qtyCol] !== "number") {
+    if (hasLocations && qtyCol >= 0 && typeof written?.[qtyCol] !== "number") {
       const rowNumber = snap.address.firstRow + 1 + added.index;
       await wb.writeFormulas(snap.address.sheet, cellAddress(snap.address.firstCol + qtyCol, rowNumber), [[QTY_FORMULA]]);
     }

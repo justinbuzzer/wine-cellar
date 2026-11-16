@@ -105,9 +105,10 @@ export default function Cellar() {
 
   return (
     <>
-      {!data.upgraded && (
+      {!data.hasLocations && (
         <div className="notice">
-          Bottles aren't split between K Cellars and Home yet. <a href={href("diagnostics")}>Upgrade the spreadsheet</a>
+          The Inventory table is missing its <strong>Qty K Cellars</strong> / <strong>Qty Home</strong> columns, so
+          bottles can't be tracked by location.
         </div>
       )}
 
@@ -126,7 +127,7 @@ export default function Cellar() {
             <option value="finished">Finished</option>
             <option value="all">All wines</option>
           </select>
-          {data.upgraded && (
+          {data.hasLocations && (
             <select value={f.loc} onChange={(e) => update({ loc: e.target.value as Filters["loc"] })} aria-label="Location">
               <option value="all">Any location</option>
               {LOCATIONS.map((l) => (

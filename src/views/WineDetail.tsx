@@ -29,7 +29,7 @@ export default function WineDetail({ id }: { id: string }) {
   }
 
   const itemId = data.file.id;
-  const upgraded = wine.kc !== null && wine.home !== null;
+  const hasLocations = wine.kc !== null && wine.home !== null;
   const at = (l: Location) => (l === "Home" ? wine.home ?? 0 : wine.kc ?? 0);
   const stocked = LOCATIONS.filter((l) => at(l) > 0);
 
@@ -93,7 +93,7 @@ export default function WineDetail({ id }: { id: string }) {
 
       <section className="card">
         <h2>Bottles</h2>
-        {upgraded ? (
+        {hasLocations ? (
           <div className="bottle-split">
             {LOCATIONS.map((l) => (
               <div key={l} className="bottle-loc">
@@ -104,19 +104,20 @@ export default function WineDetail({ id }: { id: string }) {
           </div>
         ) : (
           <p>
-            {bottles(wine.qty)}. <a href={href("diagnostics")}>Upgrade the spreadsheet</a> to track K Cellars and Home.
+            {bottles(wine.qty)}. Add <strong>Qty K Cellars</strong> and <strong>Qty Home</strong> columns to the
+            Inventory table to track bottles by location.
           </p>
         )}
         <div className="actions">
           <button
             className="primary"
-            disabled={!upgraded || busy || stocked.length === 0}
+            disabled={!hasLocations || busy || stocked.length === 0}
             onClick={() => (stocked.length === 1 ? void openBottle(stocked[0]) : setDialog("open"))}
           >
             {busy && dialog === null ? "Saving…" : "🍷 Open a bottle"}
           </button>
-          <button disabled={!upgraded || busy} onClick={() => setDialog("add")}>+ Add bottles</button>
-          <button disabled={!upgraded || busy || stocked.length === 0} onClick={() => setDialog("move")}>⇄ Move</button>
+          <button disabled={!hasLocations || busy} onClick={() => setDialog("add")}>+ Add bottles</button>
+          <button disabled={!hasLocations || busy || stocked.length === 0} onClick={() => setDialog("move")}>⇄ Move</button>
           {wine.status === "NYA" && (
             <button disabled={busy} onClick={() => setDialog("arrived")}>✓ Mark arrived</button>
           )}

@@ -38,7 +38,7 @@ export function norm(s: Cell | undefined): string {
 export const INVENTORY_COLUMNS = [
   "WineID", "Country", "Region", "Location", "Producer", "Name", "Vintage",
   "Alcohol %", "Blend", "Varietal", "Price", "Type", "Source", "Status",
-  "Remarks", "Qty", "Loc",
+  "Remarks", "Qty", "Loc", "Qty K Cellars", "Qty Home",
 ] as const;
 
 export const TASTING_COLUMNS = [
@@ -116,7 +116,7 @@ export interface Wine {
   status: string | null;
   remarks: string | null;
   qty: number;
-  /** Bottles at K Cellars / Home; null until the spreadsheet has been upgraded. */
+  /** Bottles at K Cellars / Home; null if the table has no location columns. */
   kc: number | null;
   home: number | null;
   /** Legacy free-text location (replaced by kc/home). */
