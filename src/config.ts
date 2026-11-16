@@ -1,6 +1,8 @@
 // App configuration. Nothing in this file is secret: the client ID is a public
 // identifier, and all data access requires signing in with your Microsoft account.
 
+const isDev = import.meta.env.DEV;
+
 export const config = {
   /** Microsoft Entra "Wine Cellar" app registration (Application / client ID). */
   clientId: "3e0a3684-b3f0-4815-975c-d36870055283",
@@ -11,11 +13,20 @@ export const config = {
   /** Works for both http://localhost:5173/wine-cellar/ and https://justinbuzzer.github.io/wine-cellar/ */
   redirectUri: `${window.location.origin}${import.meta.env.BASE_URL}`,
 
-  /** Files.ReadWrite is requested now so later steps don't need a new consent prompt. */
+  /** Files.ReadWrite is needed to update the workbook. */
   scopes: ["User.Read", "Files.ReadWrite"],
 
-  /** Where to look for the workbook the first time (path inside your OneDrive). */
-  defaultWorkbookPath: "/Documents/Wine Knowledge Bank v3.xlsx",
+  /**
+   * Local development (npm run dev) always uses the TEST copy; the published site
+   * uses the real workbook. Paths are inside your OneDrive.
+   */
+  usingTestFile: isDev,
+  defaultWorkbookPath: isDev
+    ? "/Documents/Wine Knowledge Bank v3 TEST.xlsx"
+    : "/Documents/Wine Knowledge Bank v3.xlsx",
+
+  /** Remembered file ID is stored separately for dev and the live site. */
+  storageKey: `wine-cellar.workbookItemId.${import.meta.env.MODE}`,
 
   /** Used if the file isn't at the default path. */
   workbookSearchText: "Wine Knowledge Bank",
@@ -40,7 +51,6 @@ export const config = {
   /**
    * Optional: Microsoft account IDs allowed to use the app. Empty = any signed-in
    * account (each person can only ever see their own OneDrive anyway).
-   * The app shows your account ID at the bottom of the page if you want to lock it down.
    */
   allowedAccountIds: [] as string[],
 

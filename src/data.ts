@@ -1,6 +1,8 @@
 // Turns raw Excel table values into typed records. Columns are matched by header
 // name, so the order of columns in the spreadsheet never matters.
 
+import { COL_HOME, COL_KC } from "./locations";
+
 export type Cell = string | number | boolean | null;
 
 export interface Table {
@@ -8,18 +10,29 @@ export interface Table {
   rows: Record<string, Cell>[];
 }
 
-export function toTable(values: Cell[][]): Table {
-  const [headerRow = [], ...body] = values;
-  const headers = headerRow.map((h) => String(h ?? "").trim());
-  const rows = body.map((r) => {
-    const rec: Record<string, Cell> = {};
-    headers.forEach((h, i) => {
-      const v = r[i];
-      rec[h] = v === "" || v === undefined ? null : v;
-    });
-    return rec;
+export function headersOf(row: Cell[] | undefined): string[] {
+  return (row ?? []).map((h) => String(h ?? "").trim());
+}
+
+export function recordFrom(headers: string[], row: Cell[]): Record<string, Cell> {
+  const rec: Record<string, Cell> = {};
+  headers.forEach((h, i) => {
+    const v = row[i];
+    rec[h] = v === "" || v === undefined ? null : v;
   });
-  return { headers, rows };
+  return rec;
+}
+
+export function toTable(values: Cell[][]): Table {
+  const [headerRow, ...body] = values;
+  const headers = headersOf(headerRow);
+  return { headers, rows: body.map((r) => recordFrom(headers, r)) };
+}
+
+/** Loose text key for matching wine names: lower-case, no accents/punctuation. */
+export function norm(s: Cell | undefined): string {
+  if (s === null || s === undefined) return "";
+  return String(s).normalize("NFD").replace(/\p{Mn}/gu, "").toLowerCase().replace(/[^a-z0-9]/g, "");
 }
 
 export const INVENTORY_COLUMNS = [
@@ -103,6 +116,10 @@ export interface Wine {
   status: string | null;
   remarks: string | null;
   qty: number;
+  /** Bottles at K Cellars / Home; null until the spreadsheet has been upgraded. */
+  kc: number | null;
+  home: number | null;
+  /** Legacy free-text location (replaced by kc/home). */
   loc: string | null;
 }
 
@@ -124,8 +141,21 @@ export function toWine(r: Record<string, Cell>): Wine {
     status: str(r["Status"]),
     remarks: str(r["Remarks"]),
     qty: num(r["Qty"]) ?? 0,
+    kc: COL_KC in r ? num(r[COL_KC]) ?? 0 : null,
+    home: COL_HOME in r ? num(r[COL_HOME]) ?? 0 : null,
     loc: str(r["Loc"]),
   };
+}
+
+/** Name without a repeated producer prefix ("Torbreck RunRig" -> "RunRig"). */
+export function shortName(w: Pick<Wine, "producer" | "name">): string {
+  const name = w.name ?? "";
+  const p = w.producer ?? "";
+  if (p && norm(name).startsWith(norm(p)) && name.length > p.length) {
+    const rest = name.slice(p.length).replace(/^[\s,\-–:]+/, "");
+    if (rest) return rest;
+  }
+  return name;
 }
 
 export interface Tasting {
@@ -202,5 +232,10 @@ export function toTasting(r: Record<string, Cell>): Tasting {
 
 export function formatPrice(p: number | null, currency: string): string {
   if (p === null) return "";
-  return new Intl.NumberFormat("en-SG", { style: "currency", currency, maximumFractionDigits: 2 }).format(p);
+  return new Intl.NumberFormat("en-SG", {
+    style: "currency",
+    currency,
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  }).format(p);
 }
