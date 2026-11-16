@@ -1,32 +1,40 @@
+/* Palette: claret and gold. In dark mode gold takes over as the main colour,
+   because deep claret disappears against a dark background. */
 :root {
-  --bg: #faf7f5;
+  --bg: #faf7f2;
   --surface: #ffffff;
-  --text: #2a1f22;
-  --muted: #7a6a6e;
-  --border: #e8dfe0;
-  --accent: #7b1e3a;
+  --text: #241c1a;
+  --muted: #7a6f68;
+  --border: #e7dfd4;
+  --accent: #5e1324;
   --accent-ink: #ffffff;
-  --chip: #f3eaec;
-  --ok: #2f6b3a;
+  --gold: #a8844a;
+  --chip: #f3ece2;
+  --ok: #3f6b3a;
   --warn: #9a5b00;
-  --error-bg: #fdf0f0;
+  --error-bg: #fbeeee;
+  --toast: #241c1a;
+  --toast-action: #dcc08a;
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   color-scheme: light dark;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #171214;
-    --surface: #211a1d;
-    --text: #f1e9eb;
-    --muted: #a8979b;
-    --border: #3a2f33;
-    --accent: #d4708f;
-    --accent-ink: #1a0f13;
-    --chip: #33262b;
-    --ok: #7fc48b;
+    --bg: #15100f;
+    --surface: #1f1817;
+    --text: #f2ebe3;
+    --muted: #a89c92;
+    --border: #3a2f2b;
+    --accent: #c9a35e;
+    --accent-ink: #1a1210;
+    --gold: #c9a35e;
+    --chip: #2b2220;
+    --ok: #8fc48b;
     --warn: #e6b062;
-    --error-bg: #3a1f24;
+    --error-bg: #3a1f22;
+    --toast: #f2ebe3;
+    --toast-action: #5e1324;
   }
 }
 
@@ -40,7 +48,11 @@ a { color: var(--accent); }
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
   padding: 16px 0; border-bottom: 1px solid var(--border); margin-bottom: 16px;
 }
-.topbar h1 { margin: 0; font-size: 1.35rem; color: var(--accent); letter-spacing: 0.02em; }
+.topbar h1 {
+  margin: 0; font-family: "Cormorant Garamond", "EB Garamond", Georgia, serif;
+  font-weight: 600; font-size: 1.75rem; line-height: 1; color: var(--accent); letter-spacing: 0.04em;
+}
+.topbar { border-bottom-color: var(--gold); }
 .who { display: flex; align-items: center; gap: 12px; font-size: 0.9rem; }
 
 .card {
@@ -117,6 +129,7 @@ button.link { border: none; background: none; color: var(--accent); padding: 4px
   display: inline-block; font-size: 0.75rem; font-weight: 700; border-radius: 999px;
   padding: 2px 8px; background: #fff4d6; color: #6b4d00; margin-top: 6px;
 }
+@media (prefers-color-scheme: dark) { .badge { background: #3a2e18; color: #e6c98a; } }
 .badge.test { background: #fff4d6; color: #6b4d00; }
 .badge.real { background: #ffe0e0; color: #8a1c1c; }
 
@@ -194,13 +207,14 @@ button.small { padding: 6px 12px; }
 
 .toast {
   position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); z-index: 60;
-  display: flex; align-items: center; gap: 12px; max-width: calc(100% - 32px);
-  background: #2a1f22; color: #fff; border-radius: 10px; padding: 10px 12px 10px 16px;
+  display: flex; align-items: center; gap: 12px; width: max-content; max-width: calc(100% - 32px);
+  background: var(--toast); color: var(--bg); border-radius: 10px; padding: 10px 12px 10px 16px;
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.25);
 }
-.toast-error { background: #8a1c1c; }
-.toast-action { background: none; border: none; color: #f5b7c8; font-weight: 700; padding: 4px 6px; }
-.toast-close { background: none; border: none; color: #fff; opacity: 0.7; padding: 0 4px; font-size: 1.2rem; }
+.toast-error { background: #8a1c1c; color: #fff; }
+.toast-action { background: none; border: none; color: var(--toast-action); font-weight: 700; padding: 4px 6px; }
+.toast-error .toast-action { color: #fff; }
+.toast-close { background: none; border: none; color: inherit; opacity: 0.7; padding: 0 4px; font-size: 1.2rem; }
 
 .form { display: grid; gap: 12px; }
 .form h2 { margin-bottom: 0; }
@@ -333,7 +347,7 @@ mark { background: #ffe58a; color: inherit; border-radius: 2px; padding: 0 1px; 
   letter-spacing: 0.08em; margin: 0; color: var(--accent);
 }
 .wl-header p { margin: 6px 0 0; color: var(--muted); font-style: italic; }
-.wl-header::after { content: ""; display: block; width: 64px; height: 1px; background: var(--accent); margin: 18px auto 0; }
+.wl-header::after { content: ""; display: block; width: 64px; height: 1px; background: var(--gold); margin: 18px auto 0; }
 .wl-empty { text-align: center; font-style: italic; color: var(--muted); }
 
 .wl-section { margin-top: 36px; scroll-margin-top: 56px; }
@@ -360,7 +374,7 @@ mark { background: #ffe58a; color: inherit; border-radius: 2px; padding: 0 1px; 
 
 @media print {
   @page { size: A4; margin: 16mm 16mm 18mm; @bottom-center { content: counter(page); font-family: Georgia, serif; font-size: 9pt; color: #777; } }
-  :root { --bg: #fff; --surface: #fff; --text: #111; --muted: #555; --border: #ccc; --accent: #6d1a33; color-scheme: light; }
+  :root { --bg: #fff; --surface: #fff; --text: #111; --muted: #555; --border: #ccc; --accent: #5e1324; --gold: #a8844a; color-scheme: light; }
   body { background: #fff; color: #111; }
   .topbar, .tabs, .foot, .banner, .notice, .toast, .wl-controls, .wl-jump { display: none !important; }
   .app { max-width: none; padding: 0; }

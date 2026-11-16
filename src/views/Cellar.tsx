@@ -19,7 +19,7 @@ interface Filters {
   sort: SortKey;
 }
 
-const DEFAULTS: Filters = { q: "", status: "cellar", type: "", country: "", region: "", loc: "all", sort: "producer" };
+const DEFAULTS: Filters = { q: "", status: "all", type: "", country: "", region: "", loc: "all", sort: "producer" };
 
 // Kept outside the component so filters survive visiting a wine and coming back.
 let saved: Filters = DEFAULTS;
