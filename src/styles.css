@@ -419,6 +419,13 @@ body.has-toast .to-top { bottom: 84px; }
 .wl-price { flex: none; font-variant-numeric: lining-nums tabular-nums; }
 .wl-sub { padding-left: calc(var(--wl-vw) + 10px); font-style: italic; color: var(--muted); font-size: 0.92rem; }
 
+/* ---- duplicate check ------------------------------------------------------- */
+
+.dupe-notice ul { margin: 6px 0; padding-left: 18px; }
+.dupe-notice li { margin: 4px 0; }
+.dupe-notice button.small { margin-top: 4px; }
+.dupe-rows { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 0.9rem; margin-top: 2px; }
+
 /* ---- installed app / offline ---------------------------------------------- */
 
 .sync-note { text-align: right; margin: -8px 0 8px; }

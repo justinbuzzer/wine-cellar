@@ -1,6 +1,9 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import type { QtyIssue } from "../bottlecheck";
-import type { SchemaCheck } from "../data";
+import { shortName, type SchemaCheck } from "../data";
+import { duplicateGroups } from "../dupes";
+import { href } from "../router";
+import { locationLine } from "./Cellar";
 import { repairBottleCounts } from "../inventory";
 import { describeError, useWorkbook } from "../store";
 import { Modal } from "../ui";
@@ -13,6 +16,7 @@ export default function Diagnostics() {
   return (
     <>
       {data.hasLocations && <BottleCheck />}
+      <DuplicateCheck />
 
       <section className="card">
         <h2>Workbook</h2>
@@ -191,6 +195,47 @@ function BottleCheck() {
           </div>
         </Modal>
       )}
+    </section>
+  );
+}
+
+/** Same producer, name and vintage on more than one row. Listed only; merge in Excel. */
+function DuplicateCheck() {
+  const { data } = useWorkbook();
+  const groups = useMemo(() => duplicateGroups(data.wines), [data.wines]);
+  if (!groups.length) {
+    return (
+      <section className="card">
+        <h2>Duplicate check</h2>
+        <p className="ok">No wine appears twice with the same vintage.</p>
+      </section>
+    );
+  }
+  return (
+    <section className="card upgrade">
+      <h2>Duplicate check</h2>
+      <p>
+        {groups.length} wine{groups.length === 1 ? "" : "s"} {groups.length === 1 ? "appears" : "appear"} on more than one
+        row with the same producer, name and vintage. Different vintages aren't counted. To merge, add the bottles to
+        one row in Excel and set the other row's bottles to 0 (or delete it). Tasting notes linked to the other row's
+        WineID won't move automatically.
+      </p>
+      <ul className="issue-list">
+        {groups.map((g) => (
+          <li key={g.map((w) => w.wineId).join("-")}>
+            <strong>
+              {g[0].producer} {shortName(g[0])} {g[0].vintage ?? "(no vintage)"}
+            </strong>
+            <div className="dupe-rows">
+              {g.map((w) => (
+                <a key={w.wineId} href={href(`wine/${w.wineId}`)}>
+                  {w.wineId} <span className="muted">· {locationLine(w)}</span>
+                </a>
+              ))}
+            </div>
+          </li>
+        ))}
+      </ul>
     </section>
   );
 }

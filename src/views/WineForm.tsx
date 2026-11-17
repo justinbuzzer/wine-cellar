@@ -1,9 +1,11 @@
 import { useMemo, useState, type ReactNode } from "react";
-import type { Cell, Wine } from "../data";
-import { addWine, updateWine } from "../inventory";
+import { shortName, type Cell, type Wine } from "../data";
+import { findSameWine } from "../dupes";
+import { addWine, adjustBottles, updateWine } from "../inventory";
 import { go, href } from "../router";
 import { describeError, useWorkbook } from "../store";
-import { useToast } from "../ui";
+import { bottles, useToast } from "../ui";
+import { locationLine } from "./Cellar";
 
 interface FormState {
   producer: string;
@@ -107,6 +109,33 @@ export default function WineForm({ id }: { id?: string }) {
       source: u(data.wines.map((w) => w.source)),
     };
   }, [data.wines, data.tastings, f.country, f.region]);
+
+  // Same producer, name and vintage as a wine already in the sheet?
+  const same = useMemo(
+    () => findSameWine(data.wines, { producer: f.producer, name: f.name, vintage: f.vintage }, id),
+    [data.wines, f.producer, f.name, f.vintage, id],
+  );
+
+  /** Adds the bottles typed here to the existing wine instead of creating a new row. */
+  async function addToExisting(w: Wine) {
+    const kc = /^\d+$/.test(f.kc.trim()) ? Number(f.kc) : 0;
+    const home = /^\d+$/.test(f.home.trim()) ? Number(f.home) : 0;
+    if (kc + home < 1) {
+      go(`wine/${w.wineId}`);
+      return;
+    }
+    setBusy(true);
+    try {
+      const updated = await adjustBottles(data.file.id, w.wineId!, { "K Cellars": kc, Home: home });
+      putWine(updated);
+      toast({ text: `Added ${bottles(kc + home)} to ${w.wineId}.` });
+      go(`wine/${w.wineId}`);
+    } catch (e) {
+      toast({ text: describeError(e), error: true });
+    } finally {
+      setBusy(false);
+    }
+  }
 
   if (id && !original) {
     return (
@@ -235,6 +264,30 @@ export default function WineForm({ id }: { id?: string }) {
         )}
         {!adding && <p className="muted small">Bottle counts are changed from the wine's page (Open, Add, Move).</p>}
 
+        {same.length > 0 && (
+          <div className="notice dupe-notice">
+            {adding ? "You already have this wine and vintage:" : "Another wine has the same producer, name and vintage:"}
+            <ul>
+              {same.map((w) => (
+                <li key={w.wineId}>
+                  <a href={href(`wine/${w.wineId}`)}>
+                    {w.wineId} · {w.producer} {shortName(w)} {w.vintage}
+                  </a>{" "}
+                  <span className="muted">· {locationLine(w)}</span>
+                  {adding && (
+                    <>
+                      {" "}
+                      <button type="button" className="small" disabled={busy} onClick={() => void addToExisting(w)}>
+                        Add these bottles to {w.wineId} instead
+                      </button>
+                    </>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
         {errors.length > 0 && (
           <ul className="form-errors">
             {errors.map((e) => <li key={e}>{e}</li>)}
@@ -243,7 +296,7 @@ export default function WineForm({ id }: { id?: string }) {
 
         <div className="actions">
           <button className="primary" type="submit" disabled={busy}>
-            {busy ? "Saving…" : adding ? "Add wine" : "Save changes"}
+            {busy ? "Saving…" : adding ? (same.length ? "Add as a separate wine anyway" : "Add wine") : "Save changes"}
           </button>
           <a href={href(id ? `wine/${id}` : "cellar")}>Cancel</a>
         </div>

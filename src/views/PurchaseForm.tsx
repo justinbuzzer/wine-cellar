@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { config } from "../config";
 import { formatPrice, shortName, type Cell, type Wine } from "../data";
+import { findSameWine } from "../dupes";
 import { addWine, receiveBottles } from "../inventory";
 import { LOCATIONS, type Location } from "../locations";
 import { GST_RATE, storedPrice, summarize } from "../purchase";
@@ -319,7 +320,12 @@ function LineCard({
   onField: (k: keyof NewFields, v: string) => void;
   onSameProducer: () => void;
 }) {
+  const { data } = useWorkbook();
   const locked = line.state === "saved" || line.state === "saving";
+  const same = useMemo(
+    () => (line.kind === "new" && line.state !== "saved" ? findSameWine(data.wines, line.fields) : []),
+    [data.wines, line.kind, line.state, line.fields],
+  );
   const converted = shared.beforeGst ? storedPrice(line.price, true) : null;
   const title =
     line.kind === "existing" && wine
@@ -362,6 +368,27 @@ function LineCard({
             </div>
           )}
           {line.kind === "new" && <NewWineFields f={line.fields} onField={onField} disabled={locked} />}
+          {same.length > 0 && !locked && (
+            <div className="notice dupe-notice">
+              You already have this wine and vintage:
+              <ul>
+                {same.map((w) => (
+                  <li key={w.wineId}>
+                    {w.wineId} · {w.producer} {shortName(w)} {w.vintage}{" "}
+                    <span className="muted">· {w.qty > 0 ? `${w.qty} in cellar now` : "finished"}</span>{" "}
+                    <button
+                      type="button"
+                      className="small"
+                      onClick={() => onChange({ kind: "existing", wineId: w.wineId ?? "", state: "idle", message: undefined })}
+                    >
+                      Add the bottles to {w.wineId} instead
+                    </button>
+                  </li>
+                ))}
+              </ul>
+              <span className="muted small">Or leave it as a new wine to add a separate row.</span>
+            </div>
+          )}
 
           <div className="row-2 line-qty">
             <Label text="Bottles">
