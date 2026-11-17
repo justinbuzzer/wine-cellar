@@ -1,13 +1,15 @@
-import { useMemo, useState } from "react";
+import { useLayoutEffect, useMemo, useState } from "react";
 import { shortName, type Tasting } from "../data";
 import { EMPTY_QUERY, fold, highlightParts, searchNotes, tokens, type NoteQuery, type NoteSort } from "../notesearch";
 import { go, href } from "../router";
 import { useWorkbook } from "../store";
-import { TypeDot } from "../ui";
+import { restoreListPosition, TypeDot } from "../ui";
 
 // Kept outside the component so the search survives opening a note and coming back.
 let saved: NoteQuery = EMPTY_QUERY;
 let savedShown = 50;
+/** The note you last opened, highlighted when you come back to the list. */
+let lastOpened: string | null = null;
 
 const PAGE = 50;
 const SCORES = [85, 88, 90, 92, 94, 96];
@@ -26,6 +28,11 @@ export default function Notes() {
     setF((prev) => (saved = { ...prev, ...p }));
     setShown((savedShown = PAGE));
   };
+
+  // Coming back from a note: return to the same spot and highlight that note.
+  useLayoutEffect(() => {
+    restoreListPosition("notes", lastOpened ? `[data-note="${CSS.escape(lastOpened)}"]` : null);
+  }, []);
 
   const all = data.tastings;
   const typeOrder = data.lists["List_Type"] ?? [];
@@ -148,7 +155,14 @@ function ResultRow({ t, words }: { t: Tasting; words: string[] }) {
   const showTaste = t.taste && t.taste !== t.nose && matchesIn(t.taste);
   const showNote = t.note && (matchesIn(t.note) || !words.length);
   return (
-    <a className="tasting-row note-link result" href={href(`note/${t.tastingId}`)}>
+    <a
+      className="tasting-row note-link result"
+      href={href(`note/${t.tastingId}`)}
+      data-note={t.tastingId ?? undefined}
+      onClick={() => {
+        lastOpened = t.tastingId;
+      }}
+    >
       <div className="result-head">
         <span className="result-score">{t.score ?? "–"}</span>
         <div className="result-wine">

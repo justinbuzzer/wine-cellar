@@ -1,12 +1,12 @@
-import { useMemo, useState } from "react";
+import { useLayoutEffect, useMemo, useState } from "react";
 import { config } from "../config";
 import { formatPrice, shortName, type Wine } from "../data";
 import { LOCATIONS, type Location } from "../locations";
 import { go, href } from "../router";
 import { useWorkbook } from "../store";
-import { bottles, TypeDot } from "../ui";
+import { bottles, restoreListPosition, TypeDot } from "../ui";
 
-type StatusFilter = "cellar" | "nya" | "finished" | "all";
+type StatusFilter = "current" | "cellar" | "nya" | "finished" | "everything";
 type SortKey = "producer" | "region" | "vintage" | "price" | "qty";
 
 interface Filters {
@@ -19,10 +19,12 @@ interface Filters {
   sort: SortKey;
 }
 
-const DEFAULTS: Filters = { q: "", status: "all", type: "", country: "", region: "", loc: "all", sort: "producer" };
+const DEFAULTS: Filters = { q: "", status: "current", type: "", country: "", region: "", loc: "all", sort: "producer" };
 
 // Kept outside the component so filters survive visiting a wine and coming back.
 let saved: Filters = DEFAULTS;
+/** The wine you last opened, highlighted when you come back to the list. */
+let lastOpened: string | null = null;
 
 const uniq = (xs: (string | null)[]) =>
   [...new Set(xs.filter((x): x is string => !!x))].sort((a, b) => a.localeCompare(b));
@@ -30,6 +32,9 @@ const uniq = (xs: (string | null)[]) =>
 function matchesStatus(w: Wine, s: StatusFilter): boolean {
   const nya = w.status === "NYA";
   switch (s) {
+    case "current":
+      // Everything except finished wines (Qty 0); not-yet-arrived wines stay visible.
+      return nya || w.qty > 0;
     case "cellar":
       return w.qty > 0 && !nya;
     case "nya":
@@ -67,6 +72,11 @@ export default function Cellar() {
   const { data } = useWorkbook();
   const [f, setF] = useState<Filters>(saved);
   const update = (p: Partial<Filters>) => setF((prev) => (saved = { ...prev, ...p }));
+
+  // Coming back from a wine: return to the same spot and highlight that wine.
+  useLayoutEffect(() => {
+    restoreListPosition("cellar", lastOpened ? `[data-wine="${CSS.escape(lastOpened)}"]` : null);
+  }, []);
 
   const typeOrder = data.lists["List_Type"] ?? [];
   const types = uniq(data.wines.map((w) => w.type)).sort(
@@ -122,10 +132,11 @@ export default function Cellar() {
         />
         <div className="filters">
           <select value={f.status} onChange={(e) => update({ status: e.target.value as StatusFilter })} aria-label="Status">
+            <option value="current">Current wines</option>
             <option value="cellar">In cellar</option>
             <option value="nya">Not yet arrived</option>
             <option value="finished">Finished</option>
-            <option value="all">All wines</option>
+            <option value="everything">Everything</option>
           </select>
           {data.hasLocations && (
             <select value={f.loc} onChange={(e) => update({ loc: e.target.value as Filters["loc"] })} aria-label="Location">
@@ -181,7 +192,15 @@ export default function Cellar() {
       ) : (
         <div className="wine-grid">
           {list.map((w) => (
-            <a key={w.wineId ?? w.name} className="wine-card" href={href(`wine/${w.wineId}`)}>
+            <a
+              key={w.wineId ?? w.name}
+              className="wine-card"
+              href={href(`wine/${w.wineId}`)}
+              data-wine={w.wineId ?? undefined}
+              onClick={() => {
+                lastOpened = w.wineId;
+              }}
+            >
               <div className="wc-top">
                 <TypeDot type={w.type} />
                 <span className="wc-producer">{w.producer}</span>

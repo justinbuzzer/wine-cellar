@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
+import { savedScroll } from "./router";
 
 // ---- Toasts (with optional Undo) --------------------------------------------
 
@@ -26,6 +27,10 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => () => window.clearTimeout(timer.current), []);
+  // Lets other floating controls (the back-to-top button) move out of the way.
+  useEffect(() => {
+    document.body.classList.toggle("has-toast", !!toast);
+  }, [toast]);
 
   return (
     <ToastContext.Provider value={show}>
@@ -194,6 +199,48 @@ export function TagInput({
       )}
     </div>
   );
+}
+
+/** Floating ↑ button that appears once you've scrolled about 1.5 screens down. */
+export function BackToTop() {
+  const [show, setShow] = useState(false);
+  useEffect(() => {
+    const onScroll = () => setShow(window.scrollY > window.innerHeight * 1.5);
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+  return (
+    <button
+      type="button"
+      className={show ? "to-top show" : "to-top"}
+      aria-label="Back to top"
+      tabIndex={show ? 0 : -1}
+      onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+    >
+      ↑
+    </button>
+  );
+}
+
+/**
+ * After a list page renders, scroll back to where you left it and briefly
+ * highlight the item you opened. If that item is no longer listed, the saved
+ * position still lands you close to where you were.
+ */
+export function restoreListPosition(page: string, selector: string | null): void {
+  const y = savedScroll(page);
+  if (y === undefined) return;
+  window.scrollTo(0, y);
+  if (!selector) return;
+  const el = document.querySelector<HTMLElement>(selector);
+  if (!el) return;
+  const r = el.getBoundingClientRect();
+  if (r.bottom < 0 || r.top > window.innerHeight) el.scrollIntoView({ block: "center" });
+  el.classList.remove("flash");
+  void el.offsetWidth; // restart the animation if it's already applied
+  el.classList.add("flash");
+  window.setTimeout(() => el.classList.remove("flash"), 1800);
 }
 
 export function TypeDot({ type }: { type: string | null }) {

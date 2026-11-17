@@ -4,7 +4,7 @@ import { isAllowed, signIn, signOut } from "./auth";
 import { config } from "./config";
 import { href, useRoute } from "./router";
 import { useWorkbook, WorkbookGate } from "./store";
-import { ToastProvider } from "./ui";
+import { BackToTop, ToastProvider } from "./ui";
 import Cellar from "./views/Cellar";
 import Diagnostics from "./views/Diagnostics";
 import WineDetail from "./views/WineDetail";
@@ -60,6 +60,8 @@ function Shell({ account, tabs, children }: { account?: AccountInfo; tabs?: bool
       : route[0] === "note"
         ? "notes"
         : route[0];
+  const page = route[0] ?? "cellar";
+  const isListPage = page === "cellar" || page === "list" || page === "notes";
   return (
     <div className="app">
       <header className="topbar">
@@ -76,13 +78,25 @@ function Shell({ account, tabs, children }: { account?: AccountInfo; tabs?: bool
       {tabs && (
         <nav className="tabs">
           {TABS.map((t) => (
-            <a key={t.path} href={href(t.path)} className={section === t.path ? "on" : ""}>
+            <a
+              key={t.path}
+              href={href(t.path)}
+              className={section === t.path ? "on" : ""}
+              onClick={(e) => {
+                // Tapping the tab you're already on goes back to the top.
+                if (page === t.path) {
+                  e.preventDefault();
+                  window.scrollTo({ top: 0, behavior: "smooth" });
+                }
+              }}
+            >
               {t.label}
             </a>
           ))}
         </nav>
       )}
       <main>{children}</main>
+      {tabs && isListPage && <BackToTop />}
       {account && (
         <footer className="foot">
           <a href={href("diagnostics")}>Diagnostics</a>
