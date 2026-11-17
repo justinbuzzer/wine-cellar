@@ -4,7 +4,7 @@ import { isAllowed, signIn, signOut } from "./auth";
 import { config } from "./config";
 import { href, useRoute } from "./router";
 import { useWorkbook, WorkbookGate } from "./store";
-import { BackToTop, ToastProvider } from "./ui";
+import { BackToTop, ThemeToggle, ToastProvider } from "./ui";
 import Cellar from "./views/Cellar";
 import Diagnostics from "./views/Diagnostics";
 import WineDetail from "./views/WineDetail";
@@ -68,12 +68,15 @@ function Shell({ account, tabs, children }: { account?: AccountInfo; tabs?: bool
         <h1>
           <a href={href("cellar")}>Wine Cellar</a>
         </h1>
-        {account && (
-          <div className="who">
-            <span>{account.name}</span>
-            <button className="link" onClick={() => signOut()}>Sign out</button>
-          </div>
-        )}
+        <div className="topbar-right">
+          <ThemeToggle />
+          {account && (
+            <div className="who">
+              <span>{account.name}</span>
+              <button className="link" onClick={() => signOut()}>Sign out</button>
+            </div>
+          )}
+        </div>
       </header>
       {tabs && (
         <nav className="tabs">

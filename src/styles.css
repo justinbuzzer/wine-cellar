@@ -15,27 +15,34 @@
   --error-bg: #fbeeee;
   --toast: #241c1a;
   --toast-action: #dcc08a;
+  --badge-bg: #fff4d6;
+  --badge-ink: #6b4d00;
+  --mark: #ffe58a;
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  color-scheme: light dark;
+  color-scheme: light;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #15100f;
-    --surface: #1f1817;
-    --text: #f2ebe3;
-    --muted: #a89c92;
-    --border: #3a2f2b;
-    --accent: #c9a35e;
-    --accent-ink: #1a1210;
-    --gold: #c9a35e;
-    --chip: #2b2220;
-    --ok: #8fc48b;
-    --warn: #e6b062;
-    --error-bg: #3a1f22;
-    --toast: #f2ebe3;
-    --toast-action: #5e1324;
-  }
+/* Dark mode. data-theme is set before first paint by the script in index.html:
+   your saved choice from the header toggle, otherwise your device's setting. */
+:root[data-theme="dark"] {
+  --bg: #15100f;
+  --surface: #1f1817;
+  --text: #f2ebe3;
+  --muted: #a89c92;
+  --border: #3a2f2b;
+  --accent: #c9a35e;
+  --accent-ink: #1a1210;
+  --gold: #c9a35e;
+  --chip: #2b2220;
+  --ok: #8fc48b;
+  --warn: #e6b062;
+  --error-bg: #3a1f22;
+  --toast: #f2ebe3;
+  --toast-action: #5e1324;
+  --badge-bg: #3a2e18;
+  --badge-ink: #e6c98a;
+  --mark: #6b5200;
+  color-scheme: dark;
 }
 
 * { box-sizing: border-box; }
@@ -53,6 +60,13 @@ a { color: var(--accent); }
   font-weight: 600; font-size: 1.75rem; line-height: 1; color: var(--accent); letter-spacing: 0.04em;
 }
 .topbar { border-bottom-color: var(--gold); }
+.topbar-right { display: flex; align-items: center; gap: 10px; }
+.theme-toggle {
+  display: inline-flex; align-items: center; justify-content: center; flex: none;
+  width: 38px; height: 38px; padding: 0; border-radius: 50%;
+  background: transparent; color: var(--accent); border: 1px solid var(--border);
+}
+.theme-toggle:hover { border-color: var(--gold); }
 .who { display: flex; align-items: center; gap: 12px; font-size: 0.9rem; }
 
 .card {
@@ -127,9 +141,8 @@ button.link { border: none; background: none; color: var(--accent); padding: 4px
 
 .badge {
   display: inline-block; font-size: 0.75rem; font-weight: 700; border-radius: 999px;
-  padding: 2px 8px; background: #fff4d6; color: #6b4d00; margin-top: 6px;
+  padding: 2px 8px; background: var(--badge-bg); color: var(--badge-ink); margin-top: 6px;
 }
-@media (prefers-color-scheme: dark) { .badge { background: #3a2e18; color: #e6c98a; } }
 .badge.test { background: #fff4d6; color: #6b4d00; }
 .badge.real { background: #ffe0e0; color: #8a1c1c; }
 
@@ -318,8 +331,7 @@ button.small { padding: 6px 12px; }
 .result-score { font-size: 1.4rem; font-weight: 700; color: var(--accent); min-width: 2ch; line-height: 1.2; }
 .result-wine { min-width: 0; }
 .result .tasting-text { margin-left: calc(2ch + 12px + 0.2rem); }
-mark { background: #ffe58a; color: inherit; border-radius: 2px; padding: 0 1px; }
-@media (prefers-color-scheme: dark) { mark { background: #6b5200; } }
+mark { background: var(--mark); color: inherit; border-radius: 2px; padding: 0 1px; }
 .show-more { width: 100%; margin: 8px 0 4px; }
 
 .issue-list { margin: 8px 0 12px; padding-left: 18px; display: grid; gap: 6px; }
@@ -397,7 +409,8 @@ body.has-toast .to-top { bottom: 84px; }
 
 @media print {
   @page { size: A4; margin: 16mm 16mm 18mm; @bottom-center { content: counter(page); font-family: Georgia, serif; font-size: 9pt; color: #777; } }
-  :root { --bg: #fff; --surface: #fff; --text: #111; --muted: #555; --border: #ccc; --accent: #5e1324; --gold: #a8844a; color-scheme: light; }
+  /* Always print black on white, whichever theme is on screen. */
+  :root, :root[data-theme="dark"] { --bg: #fff; --surface: #fff; --text: #111; --muted: #555; --border: #ccc; --accent: #5e1324; --gold: #a8844a; color-scheme: light; }
   body { background: #fff; color: #111; }
   .topbar, .tabs, .foot, .banner, .notice, .toast, .wl-controls, .wl-jump, .to-top { display: none !important; }
   .app { max-width: none; padding: 0; }
