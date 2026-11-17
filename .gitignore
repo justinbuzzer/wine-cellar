@@ -9,5 +9,13 @@ dist/
 *.xls
 *.csv
 
+# Invoices contain personal details — never commit them.
+invoice-samples/
+*.pdf
+*.jpg
+*.jpeg
+*.png
+*.heic
+
 # Local Claude/editor settings
 .claude/settings.local.json
