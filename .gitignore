@@ -19,3 +19,4 @@ invoice-samples/
 
 # Local Claude/editor settings
 .claude/settings.local.json
+*.tsbuildinfo
