@@ -14,6 +14,8 @@ import PurchaseForm from "./views/PurchaseForm";
 import NoteForm from "./views/NoteForm";
 import NoteView from "./views/NoteView";
 import Notes from "./views/Notes";
+import Overview from "./views/Overview";
+import History from "./views/History";
 
 export default function App({ account }: { account: AccountInfo | null }) {
   if (!account) {
@@ -51,6 +53,7 @@ const TABS = [
   { path: "cellar", label: "Cellar" },
   { path: "list", label: "Wine list" },
   { path: "notes", label: "Notes" },
+  { path: "overview", label: "Overview" },
 ];
 
 function Shell({ account, tabs, children }: { account?: AccountInfo; tabs?: boolean; children: ReactNode }) {
@@ -60,9 +63,11 @@ function Shell({ account, tabs, children }: { account?: AccountInfo; tabs?: bool
       ? "cellar"
       : route[0] === "note"
         ? "notes"
-        : route[0];
+        : route[0] === "history"
+          ? "overview"
+          : route[0];
   const page = route[0] ?? "cellar";
-  const isListPage = page === "cellar" || page === "list" || page === "notes";
+  const isListPage = page === "cellar" || page === "list" || page === "notes" || page === "overview" || page === "history";
   return (
     <div className="app">
       <header className="topbar">
@@ -147,6 +152,10 @@ function Routes() {
       return <WineList />;
     case "notes":
       return <Notes />;
+    case "overview":
+      return <Overview />;
+    case "history":
+      return <History key={arg ?? "all"} month={arg} />;
     case "diagnostics":
       return <Diagnostics />;
     default:

@@ -2,6 +2,9 @@ import { useState } from "react";
 import { config } from "../config";
 import { formatPrice, norm, shortName, type Tasting, type Wine } from "../data";
 import { adjustBottles, markArrived } from "../inventory";
+import { openBottle, undoOpen } from "../history";
+import { newestOpenings, noteFor } from "../historymodel";
+import { todayIso } from "../notesmodel";
 import { LOCATIONS, type Location } from "../locations";
 import { go, href } from "../router";
 import { describeError, useWorkbook } from "../store";
@@ -13,7 +16,7 @@ type Dialog = null | "open" | "add" | "move" | "arrived";
 const other = (l: Location): Location => (l === "Home" ? "K Cellars" : "Home");
 
 export default function WineDetail({ id }: { id: string }) {
-  const { data, putWine } = useWorkbook();
+  const { data, putWine, putOpening, removeOpening } = useWorkbook();
   const toast = useToast();
   const [busy, setBusy] = useState(false);
   const [dialog, setDialog] = useState<Dialog>(null);
@@ -62,20 +65,42 @@ export default function WineDetail({ id }: { id: string }) {
     }
   }
 
-  const openBottle = async (l: Location) => {
-    await act(
-      async () => {
-        const w = await adjustBottles(itemId, id, { [l]: -1 });
-        setJustOpened(true);
-        return w;
-      },
-      `Opened a bottle from ${l}. Enjoy!`,
-      async () => {
-        setJustOpened(false);
-        return adjustBottles(itemId, id, { [l]: 1 });
-      },
-    );
+  const open = async (l: Location, date: string, occasion: string) => {
+    setBusy(true);
+    try {
+      const res = await openBottle(itemId, id, l, { date, occasion });
+      putWine(res.wine);
+      if (res.opening) putOpening(res.opening);
+      setJustOpened(true);
+      setDialog(null);
+      const openId = res.opening?.openId ?? null;
+      toast({
+        text: res.logError
+          ? `Opened a bottle from ${l}, but it couldn't be added to the bottle history: ${describeError(res.logError)}`
+          : `Opened a bottle from ${l}. Enjoy!`,
+        error: !!res.logError,
+        action: {
+          label: "Undo",
+          run: async () => {
+            try {
+              putWine(await undoOpen(itemId, id, l, openId));
+              if (openId) removeOpening(openId);
+              setJustOpened(false);
+              toast({ text: "Undone." });
+            } catch (e) {
+              toast({ text: describeError(e), error: true });
+            }
+          },
+        },
+      });
+    } catch (e) {
+      toast({ text: describeError(e), error: true });
+    } finally {
+      setBusy(false);
+    }
   };
+
+  const opened = newestOpenings(data.history.filter((o) => o.wineId === id));
 
   const linked = data.tastings.filter((t) => t.wineId === id);
   const likely = data.tastings.filter(
@@ -128,9 +153,9 @@ export default function WineDetail({ id }: { id: string }) {
           <button
             className="primary"
             disabled={!hasLocations || busy || stocked.length === 0}
-            onClick={() => (stocked.length === 1 ? void openBottle(stocked[0]) : setDialog("open"))}
+            onClick={() => setDialog("open")}
           >
-            {busy && dialog === null ? "Saving…" : "🍷 Open a bottle"}
+            🍷 Open a bottle
           </button>
           <button disabled={!hasLocations || busy} onClick={() => setDialog("add")}>+ Add bottles</button>
           <button disabled={!hasLocations || busy || stocked.length === 0} onClick={() => setDialog("move")}>⇄ Move</button>
@@ -162,6 +187,27 @@ export default function WineDetail({ id }: { id: string }) {
         </dl>
       </section>
 
+      {opened.length > 0 && (
+        <section className="card">
+          <div className="card-head">
+            <h2>Opened ({opened.length})</h2>
+            <a href={href("history")}>All history →</a>
+          </div>
+          <ul className="history-mini">
+            {opened.map((o) => {
+              const note = noteFor(o, data.tastings);
+              return (
+                <li key={o.openId}>
+                  <span>{formatDay(o.date)}</span>
+                  <span className="muted">{[o.from, o.occasion].filter(Boolean).join(" · ")}</span>
+                  {note && <a href={href(`note/${note.tastingId}`)}>Note{note.score ? ` · ${note.score}` : ""}</a>}
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      )}
+
       <section className="card">
         <div className="card-head">
           <h2>Tasting notes ({linked.length + likely.length})</h2>
@@ -182,16 +228,14 @@ export default function WineDetail({ id }: { id: string }) {
       </section>
 
       {dialog === "open" && (
-        <Modal title="Open a bottle from…" onClose={() => setDialog(null)}>
-          <div className="choice-list">
-            {stocked.map((l) => (
-              <button key={l} className="choice" disabled={busy} onClick={() => void openBottle(l)}>
-                <strong>{l}</strong>
-                <span className="muted">{bottles(at(l))}</span>
-              </button>
-            ))}
-          </div>
-        </Modal>
+        <OpenDialog
+          stocked={stocked}
+          at={at}
+          busy={busy}
+          firstTime={!data.hasHistory}
+          onClose={() => setDialog(null)}
+          onOpen={(l, date, occasion) => void open(l, date, occasion)}
+        />
       )}
 
       {dialog === "add" && (
@@ -267,6 +311,68 @@ function TastingRow({ t }: { t: Tasting }) {
       {t.note && <p className="tasting-text">{t.note}</p>}
     </a>
   );
+}
+
+function OpenDialog({
+  stocked,
+  at,
+  busy,
+  firstTime,
+  onClose,
+  onOpen,
+}: {
+  stocked: Location[];
+  at: (l: Location) => number;
+  busy: boolean;
+  firstTime: boolean;
+  onClose: () => void;
+  onOpen: (l: Location, date: string, occasion: string) => void;
+}) {
+  const [from, setFrom] = useState<Location>(stocked.includes("Home") ? "Home" : stocked[0]);
+  const [date, setDate] = useState(todayIso());
+  const [occasion, setOccasion] = useState("");
+  return (
+    <Modal title="Open a bottle" onClose={onClose}>
+      {stocked.length > 1 ? (
+        <div className="seg">
+          {stocked.map((l) => (
+            <button key={l} className={l === from ? "on" : ""} onClick={() => setFrom(l)}>
+              {l} ({at(l)})
+            </button>
+          ))}
+        </div>
+      ) : (
+        <p className="muted">From {from} ({bottles(at(from))})</p>
+      )}
+      <label className="field">
+        <span>Date</span>
+        <input type="date" value={date} max={todayIso()} onChange={(e) => setDate(e.target.value || todayIso())} />
+      </label>
+      <label className="field">
+        <span>Occasion or company (optional)</span>
+        <input
+          type="text"
+          value={occasion}
+          placeholder="e.g. Dinner with friends, Anniversary"
+          onChange={(e) => setOccasion(e.target.value)}
+        />
+      </label>
+      {firstTime && (
+        <p className="muted small">This first bottle also adds an "Opened" sheet to your workbook to keep the history.</p>
+      )}
+      <div className="actions">
+        <button className="primary" disabled={busy} onClick={() => onOpen(from, date, occasion)}>
+          {busy ? "Saving…" : `🍷 Open from ${from}`}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+export function formatDay(iso: string | null): string {
+  if (!iso) return "No date";
+  const d = new Date(`${iso}T00:00:00Z`);
+  return d.toLocaleDateString("en-SG", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
 }
 
 function AddDialog({ busy, onClose, onSave }: { busy: boolean; onClose: () => void; onSave: (l: Location, n: number) => void }) {

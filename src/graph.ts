@@ -209,6 +209,26 @@ export class Workbook {
     await this.req("PATCH", `/worksheets/${enc(sheet)}/range(address='${address}')`, { formulas });
   }
 
+  /** Adds a new, empty worksheet. */
+  async addWorksheet(name: string): Promise<void> {
+    await this.req("POST", "/worksheets/add", { name });
+  }
+
+  /** Turns a range (header row included) into a table and gives it a name. */
+  async addTable(sheet: string, address: string, name: string): Promise<void> {
+    const t = await this.req<{ id: string }>("POST", `/worksheets/${enc(sheet)}/tables/add`, { address, hasHeaders: true });
+    await this.req("PATCH", `/tables/${enc(t.id)}`, { name });
+  }
+
+  async writeValues(sheet: string, address: string, values: Cell[][]): Promise<void> {
+    await this.req("PATCH", `/worksheets/${enc(sheet)}/range(address='${address}')`, { values });
+  }
+
+  /** Deletes cells and shifts the cells below up (used to remove one table row). */
+  async deleteRange(sheet: string, address: string): Promise<void> {
+    await this.req("POST", `/worksheets/${enc(sheet)}/range(address='${address}')/delete`, { shift: "Up" });
+  }
+
   /** Appends a row to a table. Returns the new row's 0-based index and its values. */
   async addRow(table: string, row: Cell[]): Promise<{ index: number; values: Cell[][] }> {
     return this.req("POST", `/tables/${enc(table)}/rows`, { values: [row.map((v) => v ?? "")] });

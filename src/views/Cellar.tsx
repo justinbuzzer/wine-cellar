@@ -2,7 +2,7 @@ import { useLayoutEffect, useMemo, useState } from "react";
 import { config } from "../config";
 import { formatPrice, shortName, type Wine } from "../data";
 import { LOCATIONS, type Location } from "../locations";
-import { go, href } from "../router";
+import { forgetScroll, go, href } from "../router";
 import { useWorkbook } from "../store";
 import { bottles, restoreListPosition, TypeDot } from "../ui";
 
@@ -25,6 +25,14 @@ const DEFAULTS: Filters = { q: "", status: "current", type: "", country: "", reg
 let saved: Filters = DEFAULTS;
 /** The wine you last opened, highlighted when you come back to the list. */
 let lastOpened: string | null = null;
+
+/** Opens the Cellar with these filters (used by the Overview page's bars). */
+export function showInCellar(p: Partial<Filters>) {
+  saved = { ...DEFAULTS, ...p };
+  lastOpened = null;
+  forgetScroll("cellar");
+  go("cellar");
+}
 
 const uniq = (xs: (string | null)[]) =>
   [...new Set(xs.filter((x): x is string => !!x))].sort((a, b) => a.localeCompare(b));

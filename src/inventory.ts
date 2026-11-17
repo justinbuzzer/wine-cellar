@@ -23,7 +23,7 @@ function requireLocations(headers: string[]) {
 
 const count = (v: Cell) => (typeof v === "number" ? v : Number(v) || 0);
 
-function result(at: Located): Wine {
+export function result(at: Located): Wine {
   if (at.headers.includes(COL_KC) && at.headers.includes(COL_HOME)) {
     at.row[at.col("Qty")] = count(at.row[at.col(COL_KC)]) + count(at.row[at.col(COL_HOME)]);
   }

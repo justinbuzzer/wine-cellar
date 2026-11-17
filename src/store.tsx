@@ -14,6 +14,8 @@ import {
 import { findWorkbook, GraphError, searchWorkbooks, storeItemId, timed, Workbook, type DriveItem } from "./graph";
 import { COL_HOME, COL_KC } from "./locations";
 import { findQtyIssues, type QtyIssue } from "./bottlecheck";
+import { readHistory } from "./history";
+import { toOpening, type Opening } from "./historymodel";
 
 export interface WorkbookData {
   file: DriveItem;
@@ -28,6 +30,10 @@ export interface WorkbookData {
   totalMs: number;
   /** Inventory has "Qty K Cellars" and "Qty Home" columns. */
   hasLocations: boolean;
+  /** Bottles opened (empty until the first one is opened in the app). */
+  history: Opening[];
+  /** The "Opened" table exists in the workbook. */
+  hasHistory: boolean;
 }
 
 export function describeError(e: unknown): string {
@@ -44,14 +50,18 @@ export function describeError(e: unknown): string {
 export async function loadWorkbook(file: DriveItem): Promise<WorkbookData> {
   const wb = Workbook.reader(file.id);
   const start = performance.now();
-  const [inv, tas, ...lists] = await Promise.all([
+  const [inv, tas, hist, ...lists] = await Promise.all([
     timed(() => wb.readTable(config.tables.inventory)),
     timed(() => wb.readTable(config.tables.tastings)),
+    timed(() => readHistory(wb)),
     ...config.lists.map((n) => timed(() => wb.readNamedList(n))),
   ]);
   const invTable = toTable(inv.value.values);
   const tasTable = toTable(tas.value.values);
+  const histRows = hist.value ? toTable(hist.value.values).rows : [];
   return {
+    history: histRows.filter((r) => Object.values(r).some((v) => v !== null)).map(toOpening),
+    hasHistory: hist.value !== null,
     file,
     wines: invTable.rows.map(toWine),
     tastings: tasTable.rows.map(toTasting),
@@ -61,6 +71,7 @@ export async function loadWorkbook(file: DriveItem): Promise<WorkbookData> {
     timings: [
       { label: `Table "${config.tables.inventory}"`, ms: inv.ms },
       { label: `Table "${config.tables.tastings}"`, ms: tas.ms },
+      { label: `Table "${config.tables.history}"${hist.value ? "" : " (not created yet)"}`, ms: hist.ms },
       { label: `${config.lists.length} dropdown lists (slowest)`, ms: Math.max(...lists.map((l) => l.ms)) },
     ],
     totalMs: Math.round(performance.now() - start),
@@ -76,6 +87,9 @@ interface Store {
   putWine(w: Wine): void;
   /** Replace (or add) one tasting note after a successful write. */
   putTasting(t: Tasting): void;
+  /** Add a history entry after a successful write. */
+  putOpening(o: Opening): void;
+  removeOpening(openId: string): void;
   changeFile(): void;
 }
 
@@ -193,6 +207,16 @@ export function WorkbookGate({ children }: { children: ReactNode }) {
           : [...p.data.tastings, t];
         return { kind: "loaded", data: { ...p.data, tastings } };
       }),
+    putOpening: (o) =>
+      setPhase((p) =>
+        p.kind !== "loaded"
+          ? p
+          : { kind: "loaded", data: { ...p.data, hasHistory: true, history: [...p.data.history.filter((x) => x.openId !== o.openId), o] } },
+      ),
+    removeOpening: (id) =>
+      setPhase((p) =>
+        p.kind !== "loaded" ? p : { kind: "loaded", data: { ...p.data, history: p.data.history.filter((x) => x.openId !== id) } },
+      ),
     changeFile: () => {
       storeItemId(null);
       void search();

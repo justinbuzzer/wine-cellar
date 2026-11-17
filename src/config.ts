@@ -34,6 +34,8 @@ export const config = {
   tables: {
     inventory: "Inventory",
     tastings: "Tasted",
+    /** Bottle history. Created automatically (on a new "Opened" sheet) the first time you open a bottle. */
+    history: "Opened",
   },
 
   lists: [

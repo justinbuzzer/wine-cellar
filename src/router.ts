@@ -51,6 +51,11 @@ export function savedScroll(page: string): number | undefined {
   return positions.get(page);
 }
 
+/** Next visit to this list page starts at the top (e.g. after changing its filters elsewhere). */
+export function forgetScroll(page: string): void {
+  positions.delete(page);
+}
+
 export function go(path: string): void {
   window.location.hash = `#/${path}`;
 }
