@@ -334,6 +334,18 @@ button.small { padding: 6px 12px; }
 mark { background: var(--mark); color: inherit; border-radius: 2px; padding: 0 1px; }
 .show-more { width: 100%; margin: 8px 0 4px; }
 
+/* ---- add a purchase ------------------------------------------------------ */
+.line-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.line-head h3 { text-transform: none; letter-spacing: 0; font-size: 1rem; color: var(--text); }
+.line-card.saved { border-color: var(--ok); opacity: 0.85; }
+.line-card.error { border-color: #c0392b; }
+.line-card.saving { opacity: 0.6; }
+.line-qty { align-items: start; }
+.line-qty .stepper { justify-content: flex-start; margin: 0; }
+.add-line { width: 100%; padding: 12px; margin-bottom: 16px; border-style: dashed; font-weight: 600; }
+.purchase-bar { flex-wrap: wrap; }
+.purchase-summary { display: flex; flex-wrap: wrap; gap: 4px 12px; flex: 1 1 100%; font-size: 0.9rem; }
+
 .issue-list { margin: 8px 0 12px; padding-left: 18px; display: grid; gap: 6px; }
 .upgrade { border-color: var(--gold); }
 

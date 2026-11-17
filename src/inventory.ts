@@ -50,6 +50,34 @@ export function adjustBottles(itemId: string, wineId: string, delta: Partial<Rec
   });
 }
 
+/**
+ * A purchase of a wine you already have: adds bottles at one location, optionally
+ * updates its price, and marks it Not yet arrived only if it currently has no
+ * bottles (Status is per wine, so bottles already in the cellar stay visible).
+ */
+export function receiveBottles(
+  itemId: string,
+  wineId: string,
+  where: Location,
+  bottles: number,
+  opts: { price?: number | null; notYetArrived?: boolean },
+): Promise<{ wine: Wine; markedNya: boolean }> {
+  return withSession(itemId, async (wb) => {
+    const at = locateById(await wb.readTable(TABLE), "WineID", wineId, "Wine");
+    requireLocations(at.headers);
+    const kc = count(at.row[at.col(COL_KC)]);
+    const home = count(at.row[at.col(COL_HOME)]);
+    const changes: Record<string, Cell> = {
+      [LOCATION_COLUMN[where]]: (where === "Home" ? home : kc) + bottles,
+    };
+    if (opts.price !== undefined && opts.price !== null) changes["Price"] = opts.price;
+    const markedNya = !!opts.notYetArrived && kc + home === 0;
+    if (markedNya) changes["Status"] = "NYA";
+    await setCells(wb, at, changes);
+    return { wine: result(at), markedNya };
+  });
+}
+
 /** Clears "NYA". If the bottles went Home, moves them from K Cellars to Home. */
 export function markArrived(itemId: string, wineId: string, where: Location): Promise<Wine> {
   return withSession(itemId, async (wb) => {

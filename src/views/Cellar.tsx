@@ -190,7 +190,8 @@ export default function Cellar() {
           {filtered && (
             <button className="link" onClick={() => update({ ...DEFAULTS, sort: f.sort })}>Clear filters</button>
           )}
-          <button className="primary small" onClick={() => go("add")}>+ Add wine</button>
+          <button className="small" onClick={() => go("add")}>+ Add wine</button>
+          <button className="primary small" onClick={() => go("purchase")}>+ Add purchase</button>
         </span>
       </div>
 
