@@ -72,6 +72,12 @@ const num = (v: Cell): number | null => {
   return Number.isFinite(n) ? n : null;
 };
 
+/** Bottle count: a number or numeric text; anything else counts as 0. */
+const count = (v: Cell): number => {
+  const n = typeof v === "number" ? v : typeof v === "string" && /^\s*\d+(\.0+)?\s*$/.test(v) ? Number(v) : 0;
+  return Number.isFinite(n) && n > 0 ? Math.round(n) : 0;
+};
+
 /** Vintage is a year number, or "NV". */
 export function vintage(v: Cell): number | "NV" | null {
   if (v === null) return null;
@@ -140,9 +146,12 @@ export function toWine(r: Record<string, Cell>): Wine {
     source: str(r["Source"]),
     status: str(r["Status"]),
     remarks: str(r["Remarks"]),
-    qty: num(r["Qty"]) ?? 0,
-    kc: COL_KC in r ? num(r[COL_KC]) ?? 0 : null,
-    home: COL_HOME in r ? num(r[COL_HOME]) ?? 0 : null,
+    // With location columns, K Cellars + Home is the source of truth; the Qty cell
+    // is only a convenience formula for Excel and may not be calculating.
+    // (A Qty typed directly in Excel with no location counts is still respected.)
+    qty: COL_KC in r && COL_HOME in r ? count(r[COL_KC]) + count(r[COL_HOME]) || count(r["Qty"]) : num(r["Qty"]) ?? 0,
+    kc: COL_KC in r ? count(r[COL_KC]) : null,
+    home: COL_HOME in r ? count(r[COL_HOME]) : null,
     loc: str(r["Loc"]),
   };
 }

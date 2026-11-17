@@ -7,6 +7,8 @@ import { headersOf, recordFrom, toWine, type Cell, type Wine } from "./data";
 import { withSession } from "./graph";
 import { COL_HOME, COL_KC, LOCATION_COLUMN, QTY_FORMULA, type Location } from "./locations";
 import { appendRow, locateById, nextId, setCells, type Located } from "./tableops";
+import { findQtyIssues, type QtyIssue } from "./bottlecheck";
+import { colLetter } from "./sheet";
 
 const TABLE = config.tables.inventory;
 
@@ -73,6 +75,45 @@ export function updateWine(itemId: string, wineId: string, changes: Record<strin
   });
 }
 
+/**
+ * Fixes bottle counts the app can't rely on:
+ *  1. sets the Qty, Qty K Cellars and Qty Home columns to "General" number format
+ *     (so new rows stop inheriting a Text format),
+ *  2. for each affected row, rewrites text counts as numbers and the Qty formula,
+ *  3. re-reads the table and reports anything still wrong.
+ * Rows whose counts can't be read are left untouched and reported.
+ */
+export function repairBottleCounts(itemId: string): Promise<{ repaired: number; remaining: QtyIssue[] }> {
+  return withSession(itemId, async (wb) => {
+    const snap = await wb.readTable(TABLE);
+    const headers = headersOf(snap.values[0]);
+    requireLocations(headers);
+    const body = snap.values.slice(1);
+    const issues = findQtyIssues(headers, body);
+    const { sheet, firstCol, firstRow, lastRow } = snap.address;
+    const col = (h: string) => colLetter(firstCol + headers.indexOf(h));
+
+    if (body.length) {
+      for (const h of ["Qty", COL_KC, COL_HOME]) {
+        await wb.writeNumberFormat(sheet, `${col(h)}${firstRow + 1}:${col(h)}${lastRow}`, body.map(() => ["General"]));
+      }
+    }
+
+    let repaired = 0;
+    for (const issue of issues) {
+      if (issue.kc === null || issue.home === null) continue;
+      const row = firstRow + 1 + issue.index;
+      if (issue.kcIsText) await wb.writeCell(sheet, `${col(COL_KC)}${row}`, issue.kc);
+      if (issue.homeIsText) await wb.writeCell(sheet, `${col(COL_HOME)}${row}`, issue.home);
+      await wb.writeFormulas(sheet, `${col("Qty")}${row}`, [[QTY_FORMULA]]);
+      repaired++;
+    }
+
+    const after = await wb.readTable(TABLE);
+    return { repaired, remaining: findQtyIssues(headersOf(after.values[0]), after.values.slice(1)) };
+  });
+}
+
 /** Append a new wine with the next free WineID. */
 export function addWine(
   itemId: string,
@@ -91,7 +132,14 @@ export function addWine(
     } else {
       values["Qty"] = bottles.kc + bottles.home;
     }
-    const row = await appendRow(wb, TABLE, snap, values, hasLocations ? { Qty: QTY_FORMULA } : {});
+    const row = await appendRow(
+      wb,
+      TABLE,
+      snap,
+      values,
+      hasLocations ? { Qty: QTY_FORMULA } : {},
+      hasLocations ? [COL_KC, COL_HOME] : ["Qty"],
+    );
     const rec = recordFrom(headers, row);
     rec["Qty"] = bottles.kc + bottles.home;
     return toWine(rec);

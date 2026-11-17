@@ -77,6 +77,9 @@ function validate(f: FormState, adding: boolean): string[] {
     for (const [label, v] of [["K Cellars", f.kc], ["Home", f.home]] as const) {
       if (!/^\d+$/.test(v.trim())) errs.push(`${label} bottles must be a whole number.`);
     }
+    if (/^\d+$/.test(f.kc.trim()) && /^\d+$/.test(f.home.trim()) && Number(f.kc) + Number(f.home) < 1) {
+      errs.push("Enter how many bottles you have at K Cellars or Home.");
+    }
   }
   return errs;
 }

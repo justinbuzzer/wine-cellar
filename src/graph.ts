@@ -201,6 +201,10 @@ export class Workbook {
     });
   }
 
+  async writeNumberFormat(sheet: string, address: string, formats: string[][]): Promise<void> {
+    await this.req("PATCH", `/worksheets/${enc(sheet)}/range(address='${address}')`, { numberFormat: formats });
+  }
+
   async writeFormulas(sheet: string, address: string, formulas: string[][]): Promise<void> {
     await this.req("PATCH", `/worksheets/${enc(sheet)}/range(address='${address}')`, { formulas });
   }

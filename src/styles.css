@@ -322,6 +322,9 @@ mark { background: #ffe58a; color: inherit; border-radius: 2px; padding: 0 1px; 
 @media (prefers-color-scheme: dark) { mark { background: #6b5200; } }
 .show-more { width: 100%; margin: 8px 0 4px; }
 
+.issue-list { margin: 8px 0 12px; padding-left: 18px; display: grid; gap: 6px; }
+.upgrade { border-color: var(--gold); }
+
 /* ---- back to top + return-to-spot highlight ---------------------------- */
 
 .to-top {

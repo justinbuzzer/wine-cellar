@@ -122,6 +122,13 @@ export default function Cellar() {
         </div>
       )}
 
+      {data.hasLocations && data.qtyIssues.length > 0 && (
+        <div className="notice">
+          {data.qtyIssues.length} wine{data.qtyIssues.length === 1 ? "" : "s"} {data.qtyIssues.length === 1 ? "has" : "have"} bottle
+          counts that need repairing in the spreadsheet. <a href={href("diagnostics")}>Review and repair</a>
+        </div>
+      )}
+
       <div className="toolbar">
         <input
           className="search"

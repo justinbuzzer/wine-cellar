@@ -60,8 +60,13 @@ export function nextId(snap: TableSnapshot, idHeader: string, prefix: string, wi
 }
 
 /**
- * Appends a row. `formulas` maps header -> formula for calculated columns; if Excel
- * stored any of them as plain text, they're rewritten explicitly as formulas.
+ * Appends a row.
+ * - `formulas` maps header -> formula for calculated columns.
+ * - `numeric` lists columns that must hold real numbers.
+ * New table rows inherit the column's number format, and a column formatted as
+ * Text would store numbers and formulas as plain text. So after adding the row,
+ * those cells are set to "General" and their numbers and formulas are written
+ * again explicitly.
  */
 export async function appendRow(
   wb: Workbook,
@@ -69,19 +74,25 @@ export async function appendRow(
   snap: TableSnapshot,
   values: Record<string, Cell>,
   formulas: Record<string, string> = {},
+  numeric: string[] = [],
 ): Promise<Cell[]> {
   const headers = headersOf(snap.values[0]);
   const row: Cell[] = headers.map((h) => (h in formulas ? formulas[h] : values[h] ?? ""));
   const added = await wb.addRow(table, row);
-  const written = added.values?.[0] ?? [];
-  const rowNumber = snap.address.firstRow + 1 + added.index;
-  for (const [h, f] of Object.entries(formulas)) {
-    const c = headers.indexOf(h);
-    if (c < 0) continue;
-    const v = written[c];
-    if (typeof v === "string" && v.startsWith("=")) {
-      await wb.writeFormulas(snap.address.sheet, cellAddress(snap.address.firstCol + c, rowNumber), [[f]]);
-    }
+  const index = typeof added.index === "number" ? added.index : snap.values.length - 1;
+  const rowNumber = snap.address.firstRow + 1 + index;
+  const at = (h: string) => cellAddress(snap.address.firstCol + headers.indexOf(h), rowNumber);
+  const sheet = snap.address.sheet;
+
+  for (const h of numeric) {
+    if (!headers.includes(h)) continue;
+    await wb.writeNumberFormat(sheet, at(h), [["General"]]);
+    await wb.writeCell(sheet, at(h), values[h] ?? 0);
   }
-  return headers.map((h, c) => (h in formulas ? (written[c] ?? "") : row[c]));
+  for (const [h, f] of Object.entries(formulas)) {
+    if (!headers.includes(h)) continue;
+    await wb.writeNumberFormat(sheet, at(h), [["General"]]);
+    await wb.writeFormulas(sheet, at(h), [[f]]);
+  }
+  return row.map((v, c) => (headers[c] in formulas ? "" : v));
 }

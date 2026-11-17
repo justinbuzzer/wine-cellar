@@ -13,6 +13,7 @@ import {
 } from "./data";
 import { findWorkbook, GraphError, searchWorkbooks, storeItemId, timed, Workbook, type DriveItem } from "./graph";
 import { COL_HOME, COL_KC } from "./locations";
+import { findQtyIssues, type QtyIssue } from "./bottlecheck";
 
 export interface WorkbookData {
   file: DriveItem;
@@ -20,6 +21,8 @@ export interface WorkbookData {
   tastings: Tasting[];
   invSchema: SchemaCheck;
   tasSchema: SchemaCheck;
+  /** Inventory rows whose bottle counts need repair (see Diagnostics). */
+  qtyIssues: QtyIssue[];
   lists: Record<string, string[]>;
   timings: { label: string; ms: number }[];
   totalMs: number;
@@ -62,6 +65,7 @@ export async function loadWorkbook(file: DriveItem): Promise<WorkbookData> {
     ],
     totalMs: Math.round(performance.now() - start),
     hasLocations: invTable.headers.includes(COL_KC) && invTable.headers.includes(COL_HOME),
+    qtyIssues: findQtyIssues(invTable.headers, inv.value.values.slice(1)),
   };
 }
 

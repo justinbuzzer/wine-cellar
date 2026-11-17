@@ -1,6 +1,9 @@
 import { useState } from "react";
+import type { QtyIssue } from "../bottlecheck";
 import type { SchemaCheck } from "../data";
-import { useWorkbook } from "../store";
+import { repairBottleCounts } from "../inventory";
+import { describeError, useWorkbook } from "../store";
+import { Modal } from "../ui";
 
 export default function Diagnostics() {
   const { data, reload, changeFile } = useWorkbook();
@@ -9,6 +12,8 @@ export default function Diagnostics() {
 
   return (
     <>
+      {data.hasLocations && <BottleCheck />}
+
       <section className="card">
         <h2>Workbook</h2>
         <dl className="facts">
@@ -101,6 +106,107 @@ export default function Diagnostics() {
           ))}
         </dl>
       </section>
+    </>
+  );
+}
+
+function BottleCheck() {
+  const { data, reload } = useWorkbook();
+  const issues = data.qtyIssues;
+  const [confirming, setConfirming] = useState(false);
+  const [running, setRunning] = useState(false);
+  const [result, setResult] = useState<{ repaired: number; remaining: QtyIssue[] } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const isTest = /test/i.test(data.file.name);
+
+  async function run() {
+    setRunning(true);
+    setError(null);
+    try {
+      const r = await repairBottleCounts(data.file.id);
+      setResult(r);
+      await reload();
+    } catch (e) {
+      setError(describeError(e));
+    } finally {
+      setRunning(false);
+      setConfirming(false);
+    }
+  }
+
+  if (result) {
+    return (
+      <section className={`card ${result.remaining.length ? "error" : ""}`}>
+        <h2>Bottle counts repaired</h2>
+        <p>{result.repaired} wine{result.repaired === 1 ? "" : "s"} fixed.</p>
+        {result.remaining.length > 0 ? (
+          <IssueList issues={result.remaining} title="Still needs fixing by hand in Excel:" />
+        ) : (
+          <p className="ok">All bottle counts are now correct.</p>
+        )}
+      </section>
+    );
+  }
+
+  if (!issues.length) {
+    return (
+      <section className="card">
+        <h2>Bottle count check</h2>
+        <p className="ok">All {data.wines.length} wines have correct bottle counts.</p>
+      </section>
+    );
+  }
+
+  return (
+    <section className="card upgrade">
+      <h2>Bottle count check</h2>
+      <p>
+        {issues.length} wine{issues.length === 1 ? "" : "s"} {issues.length === 1 ? "has" : "have"} bottle counts
+        stored in a way Excel can't add up. The app already shows the right numbers; repairing fixes the spreadsheet
+        itself, so Qty is correct in Excel too.
+      </p>
+      <IssueList issues={issues} />
+      {error && <p className="warn">{error}</p>}
+      <div className="actions">
+        <button className="primary" onClick={() => setConfirming(true)} disabled={running}>
+          Repair {issues.length} wine{issues.length === 1 ? "" : "s"}…
+        </button>
+      </div>
+      {confirming && (
+        <Modal title="Repair bottle counts?" onClose={() => !running && setConfirming(false)}>
+          <p>
+            File: <strong>{data.file.name}</strong>{" "}
+            {isTest ? <span className="badge test">TEST copy</span> : <span className="badge real">REAL file</span>}
+          </p>
+          <p>
+            This sets the three bottle columns to normal number format, rewrites the counts and the Qty formula on
+            the {issues.length} wines listed, then checks again. Nothing else changes.
+          </p>
+          <p className="muted">OneDrive keeps previous versions, so this can be undone from version history.</p>
+          <div className="actions">
+            <button className="primary" disabled={running} onClick={() => void run()}>
+              {running ? "Repairing…" : "Yes, repair"}
+            </button>
+            <button disabled={running} onClick={() => setConfirming(false)}>Cancel</button>
+          </div>
+        </Modal>
+      )}
+    </section>
+  );
+}
+
+function IssueList({ issues, title }: { issues: QtyIssue[]; title?: string }) {
+  return (
+    <>
+      {title && <p>{title}</p>}
+      <ul className="issue-list">
+        {issues.map((i) => (
+          <li key={`${i.wineId}-${i.index}`}>
+            <strong>{i.wineId || `Row ${i.index + 2}`}</strong> {i.label}
+            <div className="muted small">{i.reasons.join(" · ")}</div>
+          </li>
+        ))}
+      </ul>
     </>
   );
 }
