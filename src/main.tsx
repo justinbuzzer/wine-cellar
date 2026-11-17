@@ -6,6 +6,16 @@ import "./styles.css";
 
 const root = createRoot(document.getElementById("root")!);
 
+// Offline support for the installed app (published site only; local development
+// always loads fresh files).
+if (import.meta.env.PROD && "serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`).catch(() => {
+      /* the app still works online without it */
+    });
+  });
+}
+
 initAuth()
   .then((account) => {
     root.render(

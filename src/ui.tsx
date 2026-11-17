@@ -270,6 +270,54 @@ export function restoreListPosition(page: string, selector: string | null): void
   window.setTimeout(() => el.classList.remove("flash"), 1800);
 }
 
+// ---- Install as an app (Android / desktop Chrome and Edge) --------------------
+// The browser offers installation via a "beforeinstallprompt" event, which can
+// fire before React starts, so it's caught as soon as this module loads.
+// iPhone/iPad have no such event: there it's Share → Add to Home Screen.
+
+interface InstallPromptEvent extends Event {
+  prompt(): Promise<void>;
+  userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
+}
+let installPrompt: InstallPromptEvent | null = null;
+const installListeners = new Set<() => void>();
+window.addEventListener("beforeinstallprompt", (e) => {
+  e.preventDefault();
+  installPrompt = e as InstallPromptEvent;
+  installListeners.forEach((l) => l());
+});
+window.addEventListener("appinstalled", () => {
+  installPrompt = null;
+  installListeners.forEach((l) => l());
+});
+
+export function InstallButton() {
+  const [available, setAvailable] = useState(!!installPrompt);
+  useEffect(() => {
+    const l = () => setAvailable(!!installPrompt);
+    installListeners.add(l);
+    return () => {
+      installListeners.delete(l);
+    };
+  }, []);
+  if (!available) return null;
+  return (
+    <button
+      className="link"
+      onClick={async () => {
+        const p = installPrompt;
+        if (!p) return;
+        await p.prompt();
+        await p.userChoice;
+        installPrompt = null;
+        setAvailable(false);
+      }}
+    >
+      Install app
+    </button>
+  );
+}
+
 export function TypeDot({ type }: { type: string | null }) {
   const cls = (type ?? "other").toLowerCase().replace(/[^a-z]/g, "");
   return <span className={`dot t-${cls}`} title={type ?? ""} aria-hidden />;

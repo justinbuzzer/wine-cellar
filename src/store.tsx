@@ -1,4 +1,6 @@
-import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
+import { msal, OfflineError } from "./auth";
+import { isOfflineError, loadSnapshot, requestPersistentStorage, saveSnapshot } from "./offline";
 import { config } from "./config";
 import {
   checkSchema,
@@ -37,6 +39,8 @@ export interface WorkbookData {
 }
 
 export function describeError(e: unknown): string {
+  if (e instanceof OfflineError) return e.message;
+  if (isOfflineError(e)) return new OfflineError().message;
   if (e instanceof GraphError) {
     if (e.status === 423 || /lock/i.test(e.code)) {
       return "The workbook is locked for editing (is it open in desktop Excel?). Close it there, or use Excel for the web, and try again.";
@@ -108,14 +112,36 @@ type Phase =
   | { kind: "loaded"; data: WorkbookData }
   | { kind: "error"; message: string };
 
-/** Finds and loads the workbook, then renders children with the data available. */
+/** Whether the data on screen is fresh from OneDrive or the offline copy. */
+type Sync =
+  | { state: "fresh" }
+  | { state: "updating"; savedAt: number }
+  | { state: "offline"; savedAt: number }
+  | { state: "failed"; savedAt: number; message: string };
+
+/** Bump when WorkbookData changes shape, so an old offline copy is ignored. */
+const SNAPSHOT_VERSION = 1;
+
+function snapshotKey(): string {
+  return `v${SNAPSHOT_VERSION}:${import.meta.env.MODE}:${msal.getActiveAccount()?.homeAccountId ?? "none"}`;
+}
+
+/**
+ * Finds and loads the workbook, then renders children with the data available.
+ * If this device has an offline copy, it's shown straight away while the
+ * workbook is re-read in the background (or kept, with a notice, when offline).
+ */
 export function WorkbookGate({ children }: { children: ReactNode }) {
   const [phase, setPhase] = useState<Phase>({ kind: "finding" });
+  const [sync, setSync] = useState<Sync>({ state: "fresh" });
+  const cachedAt = useRef<number | null>(null);
+  const key = snapshotKey();
 
   const open = useCallback(async (file: DriveItem) => {
     setPhase({ kind: "loading", file });
     try {
       setPhase({ kind: "loaded", data: await loadWorkbook(file) });
+      setSync({ state: "fresh" });
     } catch (e) {
       setPhase({ kind: "error", message: describeError(e) });
     }
@@ -141,9 +167,53 @@ export function WorkbookGate({ children }: { children: ReactNode }) {
     }
   }, [open, search]);
 
+  /** Re-reads the workbook while the offline copy stays on screen. */
+  const refresh = useCallback(async () => {
+    const savedAt = cachedAt.current ?? Date.now();
+    setSync({ state: "updating", savedAt });
+    try {
+      const file = await findWorkbook();
+      if (!file) return void search();
+      setPhase({ kind: "loaded", data: await loadWorkbook(file) });
+      setSync({ state: "fresh" });
+    } catch (e) {
+      setSync(isOfflineError(e) ? { state: "offline", savedAt } : { state: "failed", savedAt, message: describeError(e) });
+    }
+  }, [search]);
+
   useEffect(() => {
-    void find();
-  }, [find]);
+    let cancelled = false;
+    void (async () => {
+      const snap = await loadSnapshot<WorkbookData>(key);
+      if (cancelled) return;
+      if (snap && Array.isArray(snap.data?.wines)) {
+        cachedAt.current = snap.savedAt;
+        setPhase({ kind: "loaded", data: snap.data });
+        void refresh();
+      } else {
+        void find();
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [key, find, refresh]);
+
+  // Keep the offline copy up to date with what's on screen (only fresh data).
+  useEffect(() => {
+    if (phase.kind !== "loaded" || sync.state !== "fresh") return;
+    cachedAt.current = Date.now();
+    void saveSnapshot(key, phase.data);
+    requestPersistentStorage();
+  }, [phase, sync.state, key]);
+
+  // Back online: refresh straight away.
+  useEffect(() => {
+    if (sync.state !== "offline") return;
+    const onOnline = () => void refresh();
+    window.addEventListener("online", onOnline);
+    return () => window.removeEventListener("online", onOnline);
+  }, [sync.state, refresh]);
 
   if (phase.kind === "finding") return <Status text="Looking for your workbook in OneDrive…" />;
   if (phase.kind === "loading") return <Status text={`Reading ${phase.file.name}…`} />;
@@ -222,7 +292,36 @@ export function WorkbookGate({ children }: { children: ReactNode }) {
       void search();
     },
   };
-  return <StoreContext.Provider value={store}>{children}</StoreContext.Provider>;
+  return (
+    <StoreContext.Provider value={store}>
+      <SyncNotice sync={sync} onRetry={() => void refresh()} />
+      {children}
+    </StoreContext.Provider>
+  );
+}
+
+function savedTime(ms: number): string {
+  return new Date(ms).toLocaleString("en-SG", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" });
+}
+
+function SyncNotice({ sync, onRetry }: { sync: Sync; onRetry: () => void }) {
+  if (sync.state === "fresh") return null;
+  if (sync.state === "updating") return <div className="sync-note muted small">Updating from OneDrive…</div>;
+  return (
+    <div className="notice sync-offline">
+      {sync.state === "offline" ? (
+        <>
+          <strong>Offline.</strong> Showing your cellar as saved on this device at {savedTime(sync.savedAt)}. Changes need a
+          connection.
+        </>
+      ) : (
+        <>
+          Couldn't refresh from OneDrive ({sync.message}). Showing the copy saved at {savedTime(sync.savedAt)}.
+        </>
+      )}{" "}
+      <button className="link" onClick={onRetry}>Try again</button>
+    </div>
+  );
 }
 
 export function Status({ text }: { text: string }) {

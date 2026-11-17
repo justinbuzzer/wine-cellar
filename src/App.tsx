@@ -4,7 +4,7 @@ import { isAllowed, signIn, signOut } from "./auth";
 import { config } from "./config";
 import { href, useRoute } from "./router";
 import { useWorkbook, WorkbookGate } from "./store";
-import { BackToTop, ThemeToggle, ToastProvider } from "./ui";
+import { BackToTop, InstallButton, ThemeToggle, ToastProvider } from "./ui";
 import Cellar from "./views/Cellar";
 import Diagnostics from "./views/Diagnostics";
 import WineDetail from "./views/WineDetail";
@@ -108,7 +108,7 @@ function Shell({ account, tabs, children }: { account?: AccountInfo; tabs?: bool
       {tabs && isListPage && <BackToTop />}
       {account && (
         <footer className="foot">
-          <a href={href("diagnostics")}>Diagnostics</a>
+          <a href={href("diagnostics")}>Diagnostics</a> <InstallButton />
         </footer>
       )}
     </div>

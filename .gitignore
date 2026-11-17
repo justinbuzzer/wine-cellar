@@ -16,6 +16,8 @@ invoice-samples/
 *.jpeg
 *.png
 *.heic
+# …except the app's own icons.
+!public/icon-*.png
 
 # Local Claude/editor settings
 .claude/settings.local.json

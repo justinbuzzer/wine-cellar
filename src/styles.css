@@ -419,6 +419,16 @@ body.has-toast .to-top { bottom: 84px; }
 .wl-price { flex: none; font-variant-numeric: lining-nums tabular-nums; }
 .wl-sub { padding-left: calc(var(--wl-vw) + 10px); font-style: italic; color: var(--muted); font-size: 0.92rem; }
 
+/* ---- installed app / offline ---------------------------------------------- */
+
+.sync-note { text-align: right; margin: -8px 0 8px; }
+.sync-offline .link { padding: 0 2px; }
+.foot .link { font-size: inherit; margin-left: 12px; }
+/* Installed on a phone: keep clear of the notch and home indicator. */
+@media (display-mode: standalone) {
+  .app { padding-top: env(safe-area-inset-top); padding-bottom: calc(32px + env(safe-area-inset-bottom)); }
+}
+
 /* ---- bottle history + overview -------------------------------------------- */
 
 .modal .field { margin-top: 12px; }

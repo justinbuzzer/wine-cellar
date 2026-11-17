@@ -4,6 +4,7 @@ import {
   type AccountInfo,
 } from "@azure/msal-browser";
 import { config } from "./config";
+import { clearSnapshots } from "./offline";
 
 export const msal = new PublicClientApplication({
   auth: {
@@ -35,14 +36,23 @@ export function signIn(): Promise<void> {
   return msal.loginRedirect({ scopes: [...config.scopes], prompt: "select_account" });
 }
 
-export function signOut(): Promise<void> {
+export async function signOut(): Promise<void> {
+  await clearSnapshots(); // the offline copy of your data goes with you
   return msal.logoutRedirect({ account: msal.getActiveAccount() ?? undefined });
+}
+
+export class OfflineError extends Error {
+  constructor() {
+    super("You're offline. Changes need a connection; you can still browse your cellar and notes.");
+  }
 }
 
 /** Get a Graph access token, silently if possible, otherwise via redirect. */
 export async function getToken(): Promise<string> {
   const account = msal.getActiveAccount();
   if (!account) throw new Error("Not signed in");
+  // Never start a sign-in redirect without a connection: it would leave the app.
+  if (navigator.onLine === false) throw new OfflineError();
   try {
     const res = await msal.acquireTokenSilent({ scopes: [...config.scopes], account });
     return res.accessToken;
