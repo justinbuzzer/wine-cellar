@@ -51,13 +51,15 @@ export class OfflineError extends Error {
 export async function getToken(): Promise<string> {
   const account = msal.getActiveAccount();
   if (!account) throw new Error("Not signed in");
-  // Never start a sign-in redirect without a connection: it would leave the app.
-  if (navigator.onLine === false) throw new OfflineError();
   try {
     const res = await msal.acquireTokenSilent({ scopes: [...config.scopes], account });
     return res.accessToken;
   } catch (err) {
     if (err instanceof InteractionRequiredAuthError) {
+      // Never start a sign-in redirect without a connection: it would leave the app.
+      // (Checked only here: some PCs report "offline" while connected, so the
+      // flag alone never stops a real request.)
+      if (navigator.onLine === false) throw new OfflineError();
       await msal.acquireTokenRedirect({ scopes: [...config.scopes], account });
       // The page navigates away; this promise never meaningfully resolves.
       return new Promise<string>(() => {});

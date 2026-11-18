@@ -39,8 +39,11 @@ export interface WorkbookData {
 }
 
 export function describeError(e: unknown): string {
-  if (e instanceof OfflineError) return e.message;
-  if (isOfflineError(e)) return new OfflineError().message;
+  if (e instanceof OfflineError || (isOfflineError(e) && navigator.onLine === false)) return new OfflineError().message;
+  if (isOfflineError(e)) {
+    const detail = (e as { errorCode?: string; message?: string }).errorCode || (e instanceof Error ? e.message : String(e));
+    return `Couldn't reach Microsoft (${detail}). Check your internet connection, VPN or browser extensions, then try again.`;
+  }
   if (e instanceof GraphError) {
     if (e.status === 423 || /lock/i.test(e.code)) {
       return "The workbook is locked for editing (is it open in desktop Excel?). Close it there, or use Excel for the web, and try again.";
@@ -177,7 +180,12 @@ export function WorkbookGate({ children }: { children: ReactNode }) {
       setPhase({ kind: "loaded", data: await loadWorkbook(file) });
       setSync({ state: "fresh" });
     } catch (e) {
-      setSync(isOfflineError(e) ? { state: "offline", savedAt } : { state: "failed", savedAt, message: describeError(e) });
+      // "Offline" only when the device itself says so; otherwise show what failed.
+      setSync(
+        e instanceof OfflineError || (navigator.onLine === false && isOfflineError(e))
+          ? { state: "offline", savedAt }
+          : { state: "failed", savedAt, message: describeError(e) },
+      );
     }
   }, [search]);
 
@@ -207,12 +215,24 @@ export function WorkbookGate({ children }: { children: ReactNode }) {
     requestPersistentStorage();
   }, [phase, sync.state, key]);
 
-  // Back online: refresh straight away.
+  // Showing the saved copy: try again when the connection returns, when the
+  // app comes back into view, and every minute, so the notice never sticks.
   useEffect(() => {
-    if (sync.state !== "offline") return;
-    const onOnline = () => void refresh();
-    window.addEventListener("online", onOnline);
-    return () => window.removeEventListener("online", onOnline);
+    if (sync.state !== "offline" && sync.state !== "failed") return;
+    const retry = () => {
+      if (document.visibilityState === "visible") void refresh();
+    };
+    const onVisible = () => document.visibilityState === "visible" && retry();
+    window.addEventListener("online", retry);
+    window.addEventListener("focus", retry);
+    document.addEventListener("visibilitychange", onVisible);
+    const timer = window.setInterval(retry, 60_000);
+    return () => {
+      window.removeEventListener("online", retry);
+      window.removeEventListener("focus", retry);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.clearInterval(timer);
+    };
   }, [sync.state, refresh]);
 
   if (phase.kind === "finding") return <Status text="Looking for your workbook in OneDrive…" />;
@@ -316,7 +336,8 @@ function SyncNotice({ sync, onRetry }: { sync: Sync; onRetry: () => void }) {
         </>
       ) : (
         <>
-          Couldn't refresh from OneDrive ({sync.message}). Showing the copy saved at {savedTime(sync.savedAt)}.
+          <strong>Couldn't update from OneDrive.</strong> Showing the copy saved at {savedTime(sync.savedAt)}. It will
+          try again automatically. <span className="muted small">{sync.message}</span>
         </>
       )}{" "}
       <button className="link" onClick={onRetry}>Try again</button>

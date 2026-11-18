@@ -68,9 +68,8 @@ export function requestPersistentStorage(): void {
   }
 }
 
-/** True when an error means "no connection" rather than a real failure. */
+/** True when an error means the request never reached Microsoft (no connection, blocked, timed out). */
 export function isOfflineError(e: unknown): boolean {
-  if (typeof navigator !== "undefined" && navigator.onLine === false) return true;
   if (e instanceof TypeError && /fetch|network|load failed/i.test(e.message)) return true;
   const code = (e as { errorCode?: string } | null)?.errorCode ?? "";
   return /network|no_network|endpoints_resolution|timed_out/i.test(code);
