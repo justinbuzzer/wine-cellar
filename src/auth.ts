@@ -55,7 +55,7 @@ export async function getToken(): Promise<string> {
     const res = await msal.acquireTokenSilent({ scopes: [...config.scopes], account });
     return res.accessToken;
   } catch (err) {
-    if (err instanceof InteractionRequiredAuthError) {
+    if (err instanceof InteractionRequiredAuthError || needsSignInAgain(err)) {
       // Never start a sign-in redirect without a connection: it would leave the app.
       // (Checked only here: some PCs report "offline" while connected, so the
       // flag alone never stops a real request.)
@@ -66,6 +66,17 @@ export async function getToken(): Promise<string> {
     }
     throw err;
   }
+}
+
+/**
+ * Sign-ins on a website last about 24 hours; after that MSAL tries a hidden
+ * renewal, which browsers that block third-party cookies stop, so it times out.
+ * That isn't a connection problem: a normal sign-in redirect fixes it (usually
+ * an instant bounce, as you're still signed in to Microsoft).
+ */
+function needsSignInAgain(err: unknown): boolean {
+  const code = (err as { errorCode?: string } | null)?.errorCode ?? "";
+  return /^(timed_out|monitor_window_timeout|block_iframe_reload|silent_sso_error|no_tokens_found|refresh_token_expired)$/.test(code);
 }
 
 export function isAllowed(account: AccountInfo): boolean {

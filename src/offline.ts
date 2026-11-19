@@ -112,5 +112,5 @@ export function requestPersistentStorage(): void {
 export function isOfflineError(e: unknown): boolean {
   if (e instanceof TypeError && /fetch|network|load failed/i.test(e.message)) return true;
   const code = (e as { errorCode?: string } | null)?.errorCode ?? "";
-  return /network|no_network|endpoints_resolution|timed_out/i.test(code);
+  return /network|no_network|endpoints_resolution/i.test(code);
 }
