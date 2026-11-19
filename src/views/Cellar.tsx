@@ -2,6 +2,7 @@ import { useLayoutEffect, useMemo, useState } from "react";
 import { config } from "../config";
 import { formatPrice, shortName, type Wine } from "../data";
 import { LOCATIONS, type Location } from "../locations";
+import { ProducerLogo } from "../logos";
 import { forgetScroll, go, href } from "../router";
 import { useWorkbook } from "../store";
 import { bottles, restoreListPosition, TypeDot } from "../ui";
@@ -217,18 +218,21 @@ export default function Cellar() {
                 lastOpened = w.wineId;
               }}
             >
-              <div className="wc-top">
-                <TypeDot type={w.type} />
-                <span className="wc-producer">{w.producer}</span>
-                <span className="wc-vintage">{w.vintage}</span>
+              <ProducerLogo producer={w.producer} />
+              <div className="wc-body">
+                <div className="wc-top">
+                  <TypeDot type={w.type} />
+                  <span className="wc-producer">{w.producer}</span>
+                  <span className="wc-vintage">{w.vintage}</span>
+                </div>
+                <div className="wc-name">{shortName(w)}</div>
+                <div className="wc-meta">{[w.type, w.region, w.location].filter(Boolean).join(" · ")}</div>
+                <div className="wc-bottom">
+                  <span className={w.qty > 0 ? "wc-qty" : "wc-qty muted"}>{locationLine(w)}</span>
+                  <span className="wc-price">{formatPrice(w.price, config.currency)}</span>
+                </div>
+                {w.status === "NYA" && <span className="badge">Not yet arrived</span>}
               </div>
-              <div className="wc-name">{shortName(w)}</div>
-              <div className="wc-meta">{[w.type, w.region, w.location].filter(Boolean).join(" · ")}</div>
-              <div className="wc-bottom">
-                <span className={w.qty > 0 ? "wc-qty" : "wc-qty muted"}>{locationLine(w)}</span>
-                <span className="wc-price">{formatPrice(w.price, config.currency)}</span>
-              </div>
-              {w.status === "NYA" && <span className="badge">Not yet arrived</span>}
             </a>
           ))}
         </div>

@@ -32,7 +32,7 @@ export interface Timed<T> {
   ms: number;
 }
 
-type Method = "GET" | "POST" | "PATCH";
+type Method = "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
 
 async function request<T>(
   method: Method,
@@ -43,13 +43,15 @@ async function request<T>(
 ): Promise<T> {
   const token = await getToken();
   const headers: Record<string, string> = { Authorization: `Bearer ${token}` };
-  if (body !== undefined) headers["Content-Type"] = "application/json";
+  const raw = body instanceof Blob;
+  if (body !== undefined) headers["Content-Type"] = raw ? body.type || "application/octet-stream" : "application/json";
   if (sessionId) headers["workbook-session-id"] = sessionId;
 
-  const res = await fetch(`${GRAPH}${path}`, {
+  // Paging links (@odata.nextLink) are full URLs.
+  const res = await fetch(path.startsWith("https://") ? path : `${GRAPH}${path}`, {
     method,
     headers,
-    body: body === undefined ? undefined : JSON.stringify(body),
+    body: body === undefined ? undefined : raw ? body : JSON.stringify(body),
   });
 
   // 429 = request was not processed, always safe to retry. 503/504 only for
@@ -138,6 +140,67 @@ export async function searchWorkbooks(text: string): Promise<DriveItem[]> {
   const q = encodeURIComponent(text.replace(/'/g, "''"));
   const res = await request<{ value: DriveItem[] }>("GET", `/me/drive/root/search(q='${q}')?${ITEM_FIELDS}`);
   return res.value.filter((i) => i.name.toLowerCase().endsWith(".xlsx"));
+}
+
+// ---- Files in a OneDrive folder (producer logos) ----------------------------
+
+export interface FolderFile {
+  id: string;
+  name: string;
+  eTag: string;
+  /** Short-lived link to the file's content (no sign-in needed). */
+  downloadUrl?: string;
+}
+
+interface RawFile {
+  id: string;
+  name: string;
+  eTag: string;
+  file?: unknown;
+  "@microsoft.graph.downloadUrl"?: string;
+}
+
+const toFolderFile = (f: RawFile): FolderFile => ({
+  id: f.id,
+  name: f.name,
+  eTag: f.eTag,
+  downloadUrl: f["@microsoft.graph.downloadUrl"],
+});
+
+/** Files directly inside a folder. A folder that doesn't exist yet is empty. */
+export async function listFolder(path: string): Promise<FolderFile[]> {
+  const out: FolderFile[] = [];
+  let next: string | undefined = `/me/drive/root:${encodePath(path)}:/children?$top=200`;
+  try {
+    while (next) {
+      const page: { value: RawFile[]; "@odata.nextLink"?: string } = await request<{
+        value: RawFile[];
+        "@odata.nextLink"?: string;
+      }>("GET", next);
+      out.push(...page.value.filter((f) => f.file).map(toFolderFile));
+      next = page["@odata.nextLink"];
+    }
+  } catch (e) {
+    if (e instanceof GraphError && e.status === 404) return [];
+    throw e;
+  }
+  return out;
+}
+
+/** Saves a small file (under 4 MB) at a path, replacing any file already there. The folder is created if needed. */
+export async function uploadFile(path: string, content: Blob): Promise<FolderFile> {
+  const f = await request<RawFile>("PUT", `/me/drive/root:${encodePath(path)}:/content?@microsoft.graph.conflictBehavior=replace`, content);
+  return toFolderFile(f);
+}
+
+export async function renameFile(id: string, name: string): Promise<FolderFile> {
+  const f = await request<RawFile>("PATCH", `/me/drive/items/${id}`, { name, "@microsoft.graph.conflictBehavior": "replace" });
+  return toFolderFile(f);
+}
+
+/** Moves a file to the OneDrive recycle bin. */
+export async function deleteFile(id: string): Promise<void> {
+  await request("DELETE", `/me/drive/items/${id}`);
 }
 
 // ---- Excel workbook ---------------------------------------------------------

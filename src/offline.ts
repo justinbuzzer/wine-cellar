@@ -5,6 +5,8 @@
 
 const DB_NAME = "wine-cellar";
 const STORE = "snapshots";
+/** Producer logo pictures, one record per file. */
+const LOGOS = "logos";
 
 export interface Snapshot<T> {
   savedAt: number;
@@ -13,19 +15,21 @@ export interface Snapshot<T> {
 
 function open(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, 1);
-    req.onupgradeneeded = () => req.result.createObjectStore(STORE);
+    const req = indexedDB.open(DB_NAME, 2);
+    req.onupgradeneeded = () => {
+      for (const s of [STORE, LOGOS]) if (!req.result.objectStoreNames.contains(s)) req.result.createObjectStore(s);
+    };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
   });
 }
 
-async function run<T>(mode: IDBTransactionMode, fn: (s: IDBObjectStore) => IDBRequest): Promise<T> {
+async function run<T>(mode: IDBTransactionMode, fn: (s: IDBObjectStore) => IDBRequest, store = STORE): Promise<T> {
   const db = await open();
   try {
     return await new Promise<T>((resolve, reject) => {
-      const tx = db.transaction(STORE, mode);
-      const req = fn(tx.objectStore(STORE));
+      const tx = db.transaction(store, mode);
+      const req = fn(tx.objectStore(store));
       tx.oncomplete = () => resolve(req.result as T);
       tx.onerror = () => reject(tx.error);
       tx.onabort = () => reject(tx.error);
@@ -52,10 +56,46 @@ export async function saveSnapshot<T>(key: string, data: T): Promise<void> {
 }
 
 export async function clearSnapshots(): Promise<void> {
+  for (const store of [STORE, LOGOS]) {
+    try {
+      await run("readwrite", (s) => s.clear(), store);
+    } catch {
+      /* nothing stored */
+    }
+  }
+}
+
+export interface CachedLogo {
+  id: string;
+  name: string;
+  eTag: string;
+  blob: Blob;
+}
+
+const logoRange = (prefix: string) => IDBKeyRange.bound(`${prefix}|`, `${prefix}|￿`);
+
+/** All logos saved on this device for one account. */
+export async function loadLogos(prefix: string): Promise<CachedLogo[]> {
   try {
-    await run("readwrite", (s) => s.clear());
+    return (await run<CachedLogo[]>("readonly", (s) => s.getAll(logoRange(prefix)), LOGOS)) ?? [];
   } catch {
-    /* nothing stored */
+    return [];
+  }
+}
+
+export async function saveLogo(prefix: string, logo: CachedLogo): Promise<void> {
+  try {
+    await run("readwrite", (s) => s.put(logo, `${prefix}|${logo.id}`), LOGOS);
+  } catch {
+    /* not critical */
+  }
+}
+
+export async function forgetLogo(prefix: string, id: string): Promise<void> {
+  try {
+    await run("readwrite", (s) => s.delete(`${prefix}|${id}`), LOGOS);
+  } catch {
+    /* not critical */
   }
 }
 

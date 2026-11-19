@@ -25,6 +25,9 @@ export const config = {
     ? "/Documents/Wine Knowledge Bank v3 TEST.xlsx"
     : "/Documents/Wine Knowledge Bank v3.xlsx",
 
+  /** Producer logos, one picture per producer, named after the producer (e.g. "Torbreck.png"). */
+  logoFolder: isDev ? "/Documents/Wine Cellar Logos TEST" : "/Documents/Wine Cellar Logos",
+
   /** Remembered file ID is stored separately for dev and the live site. */
   storageKey: `wine-cellar.workbookItemId.${import.meta.env.MODE}`,
 

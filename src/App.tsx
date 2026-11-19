@@ -16,6 +16,8 @@ import NoteView from "./views/NoteView";
 import Notes from "./views/Notes";
 import Overview from "./views/Overview";
 import History from "./views/History";
+import Producers from "./views/Producers";
+import { LogoProvider } from "./logos";
 
 export default function App({ account }: { account: AccountInfo | null }) {
   if (!account) {
@@ -41,8 +43,10 @@ export default function App({ account }: { account: AccountInfo | null }) {
     <ToastProvider>
       <Shell account={account} tabs>
         <WorkbookGate>
-          <TestBanner />
-          <Routes />
+          <LogoProvider>
+            <TestBanner />
+            <Routes />
+          </LogoProvider>
         </WorkbookGate>
       </Shell>
     </ToastProvider>
@@ -63,11 +67,11 @@ function Shell({ account, tabs, children }: { account?: AccountInfo; tabs?: bool
       ? "cellar"
       : route[0] === "note"
         ? "notes"
-        : route[0] === "history"
+        : route[0] === "history" || route[0] === "producers"
           ? "overview"
           : route[0];
   const page = route[0] ?? "cellar";
-  const isListPage = page === "cellar" || page === "list" || page === "notes" || page === "overview" || page === "history";
+  const isListPage = page === "cellar" || page === "list" || page === "notes" || page === "overview" || page === "history" || page === "producers";
   return (
     <div className="app">
       <header className="topbar">
@@ -156,6 +160,8 @@ function Routes() {
       return <Overview />;
     case "history":
       return <History key={arg ?? "all"} month={arg} />;
+    case "producers":
+      return <Producers />;
     case "diagnostics":
       return <Diagnostics />;
     default:

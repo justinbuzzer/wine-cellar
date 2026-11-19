@@ -10,6 +10,8 @@ import { go, href } from "../router";
 import { describeError, useWorkbook } from "../store";
 import { bottles, Modal, Stepper, TypeDot, useToast } from "../ui";
 import { locationLine } from "./Cellar";
+import { LogoDialog, ProducerLogo, useLogos } from "../logos";
+import { producerKey } from "../producers";
 
 type Dialog = null | "open" | "add" | "move" | "arrived";
 
@@ -21,6 +23,8 @@ export default function WineDetail({ id }: { id: string }) {
   const [busy, setBusy] = useState(false);
   const [dialog, setDialog] = useState<Dialog>(null);
   const [justOpened, setJustOpened] = useState(false);
+  const [logoOpen, setLogoOpen] = useState(false);
+  const logos = useLogos();
 
   const wine = data.wines.find((w) => w.wineId === id);
   if (!wine) {
@@ -113,9 +117,22 @@ export default function WineDetail({ id }: { id: string }) {
 
       <section className="card">
         <div className="detail-head">
-          <TypeDot type={wine.type} />
+          <button
+            type="button"
+            className="logo-button"
+            onClick={() => setLogoOpen(true)}
+            disabled={!wine.producer}
+            aria-label={logos.get(wine.producer) ? "Change the producer's logo" : "Add a logo for this producer"}
+            title={logos.get(wine.producer) ? "Change logo" : "Add logo"}
+          >
+            <ProducerLogo producer={wine.producer} size="large" />
+            {wine.producer && <span className="logo-button-label">{logos.get(wine.producer) ? "Change" : "+ Logo"}</span>}
+          </button>
           <div>
-            <div className="wc-producer">{wine.producer}</div>
+            <div className="wc-top">
+              <TypeDot type={wine.type} />
+              <span className="wc-producer">{wine.producer}</span>
+            </div>
             <h2 className="detail-title">
               {shortName(wine)} <span className="muted">{wine.vintage}</span>
             </h2>
@@ -124,6 +141,14 @@ export default function WineDetail({ id }: { id: string }) {
         </div>
         {wine.status === "NYA" && <span className="badge">Not yet arrived</span>}
       </section>
+
+      {logoOpen && wine.producer && (
+        <LogoDialog
+          producer={wine.producer}
+          wineCount={data.wines.filter((w) => producerKey(w.producer) === producerKey(wine.producer)).length}
+          onClose={() => setLogoOpen(false)}
+        />
+      )}
 
       {justOpened && (
         <a className="card prompt-card" href={href(`note/new/wine/${id}`)}>

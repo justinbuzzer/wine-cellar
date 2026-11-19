@@ -2,6 +2,8 @@ import { useMemo } from "react";
 import { config } from "../config";
 import { formatPrice } from "../data";
 import { LOCATIONS, type Location } from "../locations";
+import { useLogos } from "../logos";
+import { producerGroups } from "../producers";
 import { todayIso } from "../notesmodel";
 import { cellarStats, drinkingStats, noteStats, topN, type Bar } from "../overview";
 import { go, href } from "../router";
@@ -11,6 +13,22 @@ import { TYPE_ORDER, typeLabel } from "../winelist";
 import { showInCellar } from "./Cellar";
 
 const money = (n: number) => formatPrice(n, config.currency);
+
+/** Link to the Producers page with how many producers have a logo so far. */
+function LogoProgress() {
+  const { data } = useWorkbook();
+  const logos = useLogos();
+  const groups = useMemo(() => producerGroups(data.wines), [data.wines]);
+  const done = groups.filter((g) => logos.get(g.name)).length;
+  return (
+    <a className="card prompt-card" href={href("producers")}>
+      <strong>Producer logos</strong>
+      <span className="muted">
+        {done} of {groups.length} producers have one →
+      </span>
+    </a>
+  );
+}
 
 export default function Overview() {
   const { data } = useWorkbook();
@@ -39,6 +57,8 @@ export default function Overview() {
           sub={n.average !== null ? `average score ${n.average}` : undefined}
         />
       </div>
+
+      <LogoProgress />
 
       <div className="ov-grid">
         <section className="card">
