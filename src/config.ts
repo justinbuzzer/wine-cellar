@@ -39,6 +39,8 @@ export const config = {
     tastings: "Tasted",
     /** Bottle history. Created automatically (on a new "Opened" sheet) the first time you open a bottle. */
     history: "Opened",
+    /** Bottles sold. Created automatically (on a new "Sold" sheet) the first time you sell a bottle. */
+    sales: "Sold",
   },
 
   lists: [

@@ -1,4 +1,6 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { drinkingStats } from "../overview";
+import { todayIso } from "../notesmodel";
 import { config } from "../config";
 import { formatPrice } from "../data";
 import { deleteOpening } from "../history";
@@ -21,6 +23,7 @@ export default function History({ month }: { month?: string }) {
     data.history.filter((o) => (month ? o.date?.startsWith(month) : !year || o.date?.startsWith(year))),
   );
   const value = shown.reduce((s, o) => s + (o.price ?? 0), 0);
+  const favourites = useMemo(() => drinkingStats(data.history, todayIso()).favourites, [data.history]);
 
   async function remove(o: Opening) {
     if (!window.confirm(`Remove "${[o.producer, o.name, o.vintage].filter(Boolean).join(" ")}" opened ${formatDay(o.date)} from the history? Bottle counts won't change.`)) return;
@@ -64,6 +67,20 @@ export default function History({ month }: { month?: string }) {
           </p>
         )}
       </section>
+
+      {!month && !year && favourites.length > 0 && (
+        <section className="card">
+          <h2>Opened most this year</h2>
+          <ul className="ov-list">
+            {favourites.map((f) => (
+              <li key={f.label}>
+                {f.wineId ? <a href={href(`wine/${f.wineId}`)}>{f.label}</a> : f.label}
+                <span className="muted"> × {f.count}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       {shown.length === 0 && data.history.length > 0 && <p className="muted center-text">Nothing opened in this period.</p>}
 

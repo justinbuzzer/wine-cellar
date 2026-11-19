@@ -9,6 +9,7 @@ import {
   toTable,
   toTasting,
   toWine,
+  type Cell,
   type SchemaCheck,
   type Tasting,
   type Wine,
@@ -18,6 +19,8 @@ import { COL_HOME, COL_KC } from "./locations";
 import { findQtyIssues, type QtyIssue } from "./bottlecheck";
 import { readHistory } from "./history";
 import { toOpening, type Opening } from "./historymodel";
+import { readSales } from "./sales";
+import { toSale, type Sale } from "./salesmodel";
 
 export interface WorkbookData {
   file: DriveItem;
@@ -36,6 +39,10 @@ export interface WorkbookData {
   history: Opening[];
   /** The "Opened" table exists in the workbook. */
   hasHistory: boolean;
+  /** Bottles sold (empty until the first sale in the app). */
+  sales: Sale[];
+  /** The "Sold" table exists in the workbook. */
+  hasSales: boolean;
 }
 
 export function describeError(e: unknown): string {
@@ -57,18 +64,22 @@ export function describeError(e: unknown): string {
 export async function loadWorkbook(file: DriveItem): Promise<WorkbookData> {
   const wb = Workbook.reader(file.id);
   const start = performance.now();
-  const [inv, tas, hist, ...lists] = await Promise.all([
+  const [inv, tas, hist, sold, ...lists] = await Promise.all([
     timed(() => wb.readTable(config.tables.inventory)),
     timed(() => wb.readTable(config.tables.tastings)),
     timed(() => readHistory(wb)),
+    timed(() => readSales(wb)),
     ...config.lists.map((n) => timed(() => wb.readNamedList(n))),
   ]);
   const invTable = toTable(inv.value.values);
   const tasTable = toTable(tas.value.values);
-  const histRows = hist.value ? toTable(hist.value.values).rows : [];
+  const rowsOf = (snap: { values: Cell[][] } | null) =>
+    snap ? toTable(snap.values).rows.filter((r) => Object.values(r).some((v) => v !== null)) : [];
   return {
-    history: histRows.filter((r) => Object.values(r).some((v) => v !== null)).map(toOpening),
+    history: rowsOf(hist.value).map(toOpening),
     hasHistory: hist.value !== null,
+    sales: rowsOf(sold.value).map(toSale),
+    hasSales: sold.value !== null,
     file,
     wines: invTable.rows.map(toWine),
     tastings: tasTable.rows.map(toTasting),
@@ -79,6 +90,7 @@ export async function loadWorkbook(file: DriveItem): Promise<WorkbookData> {
       { label: `Table "${config.tables.inventory}"`, ms: inv.ms },
       { label: `Table "${config.tables.tastings}"`, ms: tas.ms },
       { label: `Table "${config.tables.history}"${hist.value ? "" : " (not created yet)"}`, ms: hist.ms },
+      { label: `Table "${config.tables.sales}"${sold.value ? "" : " (not created yet)"}`, ms: sold.ms },
       { label: `${config.lists.length} dropdown lists (slowest)`, ms: Math.max(...lists.map((l) => l.ms)) },
     ],
     totalMs: Math.round(performance.now() - start),
@@ -97,6 +109,8 @@ interface Store {
   /** Add a history entry after a successful write. */
   putOpening(o: Opening): void;
   removeOpening(openId: string): void;
+  putSale(s: Sale): void;
+  removeSale(saleId: string): void;
   changeFile(): void;
 }
 
@@ -123,7 +137,7 @@ type Sync =
   | { state: "failed"; savedAt: number; message: string };
 
 /** Bump when WorkbookData changes shape, so an old offline copy is ignored. */
-const SNAPSHOT_VERSION = 1;
+const SNAPSHOT_VERSION = 2;
 
 function snapshotKey(): string {
   return `v${SNAPSHOT_VERSION}:${import.meta.env.MODE}:${msal.getActiveAccount()?.homeAccountId ?? "none"}`;
@@ -306,6 +320,16 @@ export function WorkbookGate({ children }: { children: ReactNode }) {
     removeOpening: (id) =>
       setPhase((p) =>
         p.kind !== "loaded" ? p : { kind: "loaded", data: { ...p.data, history: p.data.history.filter((x) => x.openId !== id) } },
+      ),
+    putSale: (s) =>
+      setPhase((p) =>
+        p.kind !== "loaded"
+          ? p
+          : { kind: "loaded", data: { ...p.data, hasSales: true, sales: [...p.data.sales.filter((x) => x.saleId !== s.saleId), s] } },
+      ),
+    removeSale: (id) =>
+      setPhase((p) =>
+        p.kind !== "loaded" ? p : { kind: "loaded", data: { ...p.data, sales: p.data.sales.filter((x) => x.saleId !== id) } },
       ),
     changeFile: () => {
       storeItemId(null);

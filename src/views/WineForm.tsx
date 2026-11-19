@@ -22,6 +22,7 @@ interface FormState {
   source: string;
   status: string;
   remarks: string;
+  yearPurchased: string;
   kc: string;
   home: string;
 }
@@ -44,6 +45,8 @@ function fromWine(w?: Wine): FormState {
     source: s(w?.source),
     status: s(w?.status),
     remarks: s(w?.remarks),
+    // New wines default to this year; you can change it (e.g. for older bottles).
+    yearPurchased: w ? s(w.yearPurchased) : String(new Date().getFullYear()),
     kc: "0",
     home: "0",
   };
@@ -65,6 +68,7 @@ const COLUMNS: Record<Exclude<keyof FormState, "kc" | "home">, [string, (v: stri
   source: ["Source", (v) => v.trim()],
   status: ["Status", (v) => v],
   remarks: ["Remarks", (v) => v.trim()],
+  yearPurchased: ["Year Purchased", (v) => (v.trim() === "" ? "" : Number(v))],
 };
 
 function validate(f: FormState, adding: boolean): string[] {
@@ -75,6 +79,9 @@ function validate(f: FormState, adding: boolean): string[] {
   if (f.vintage.trim() && !/^(\d{4}|nv)$/i.test(f.vintage.trim())) errs.push("Vintage must be a year (e.g. 2019) or NV.");
   if (f.alcohol.trim() && !(Number(f.alcohol) > 0 && Number(f.alcohol) < 30)) errs.push("Alcohol should be a percentage like 13.5.");
   if (f.price.trim() && !(Number(f.price) >= 0)) errs.push("Price must be a number.");
+  if (f.yearPurchased.trim() && !(/^\d{4}$/.test(f.yearPurchased.trim()) && Number(f.yearPurchased) >= 1900 && Number(f.yearPurchased) <= new Date().getFullYear())) {
+    errs.push("Year purchased must be a year like 2016.");
+  }
   if (adding) {
     for (const [label, v] of [["K Cellars", f.kc], ["Home", f.home]] as const) {
       if (!/^\d+$/.test(v.trim())) errs.push(`${label} bottles must be a whole number.`);
@@ -246,6 +253,11 @@ export default function WineForm({ id }: { id?: string }) {
               <option value="">In cellar</option>
               {statusOptions.map((o) => <option key={o} value={o}>{o === "NYA" ? "Not yet arrived (NYA)" : o}</option>)}
             </select>
+          </Field>
+        </div>
+        <div className="row-2">
+          <Field label="Year purchased">
+            <input value={f.yearPurchased} onChange={set("yearPurchased")} inputMode="numeric" maxLength={4} placeholder="e.g. 2016" />
           </Field>
         </div>
         <Field label="Remarks">

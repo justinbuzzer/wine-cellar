@@ -4,7 +4,7 @@
 
 import { config } from "./config";
 import { headersOf, recordFrom, toWine, type Cell, type Wine } from "./data";
-import { withSession } from "./graph";
+import { withSession, type TableSnapshot, type Workbook } from "./graph";
 import { COL_HOME, COL_KC, LOCATION_COLUMN, QTY_FORMULA, type Location } from "./locations";
 import { appendRow, locateById, nextId, setCells, type Located } from "./tableops";
 import { findQtyIssues, type QtyIssue } from "./bottlecheck";
@@ -22,6 +22,16 @@ function requireLocations(headers: string[]) {
 }
 
 const count = (v: Cell) => (typeof v === "number" ? v : Number(v) || 0);
+
+/** Year the wine was bought. Added to the end of the Inventory table the first time it's needed. */
+export const COL_YEAR = "Year Purchased";
+
+/** Makes sure the Inventory table has a Year Purchased column; returns a fresh read of the table. */
+async function withYearColumn(wb: Workbook, snap: TableSnapshot): Promise<TableSnapshot> {
+  if (headersOf(snap.values[0]).includes(COL_YEAR)) return snap;
+  await wb.addTableColumn(TABLE, [[COL_YEAR], ...snap.values.slice(1).map(() => [""])]);
+  return wb.readTable(TABLE);
+}
 
 export function result(at: Located): Wine {
   if (at.headers.includes(COL_KC) && at.headers.includes(COL_HOME)) {
@@ -60,10 +70,12 @@ export function receiveBottles(
   wineId: string,
   where: Location,
   bottles: number,
-  opts: { price?: number | null; notYetArrived?: boolean },
+  opts: { price?: number | null; notYetArrived?: boolean; yearPurchased?: number | null },
 ): Promise<{ wine: Wine; markedNya: boolean }> {
   return withSession(itemId, async (wb) => {
-    const at = locateById(await wb.readTable(TABLE), "WineID", wineId, "Wine");
+    let snap = await wb.readTable(TABLE);
+    if (opts.yearPurchased) snap = await withYearColumn(wb, snap);
+    const at = locateById(snap, "WineID", wineId, "Wine");
     requireLocations(at.headers);
     const kc = count(at.row[at.col(COL_KC)]);
     const home = count(at.row[at.col(COL_HOME)]);
@@ -73,6 +85,8 @@ export function receiveBottles(
     if (opts.price !== undefined && opts.price !== null) changes["Price"] = opts.price;
     const markedNya = !!opts.notYetArrived && kc + home === 0;
     if (markedNya) changes["Status"] = "NYA";
+    // Keeps the year of the first purchase; fills it in only if it's blank.
+    if (opts.yearPurchased && String(at.row[at.col(COL_YEAR)] ?? "").trim() === "") changes[COL_YEAR] = opts.yearPurchased;
     await setCells(wb, at, changes);
     return { wine: result(at), markedNya };
   });
@@ -96,8 +110,12 @@ export function markArrived(itemId: string, wineId: string, where: Location): Pr
 /** Edit descriptive fields. Only cells whose value actually changed are written. */
 export function updateWine(itemId: string, wineId: string, changes: Record<string, Cell>): Promise<Wine> {
   return withSession(itemId, async (wb) => {
-    const at = locateById(await wb.readTable(TABLE), "WineID", wineId, "Wine");
-    const allowed = Object.fromEntries(Object.entries(changes).filter(([h]) => !PROTECTED.has(h)));
+    let snap = await wb.readTable(TABLE);
+    if (String(changes[COL_YEAR] ?? "") !== "") snap = await withYearColumn(wb, snap);
+    const headers = headersOf(snap.values[0]);
+    const at = locateById(snap, "WineID", wineId, "Wine");
+    // Clearing a column that doesn't exist yet is a no-op.
+    const allowed = Object.fromEntries(Object.entries(changes).filter(([h]) => !PROTECTED.has(h) && headers.includes(h)));
     await setCells(wb, at, allowed);
     return result(at);
   });
@@ -149,7 +167,8 @@ export function addWine(
   bottles: { kc: number; home: number },
 ): Promise<Wine> {
   return withSession(itemId, async (wb) => {
-    const snap = await wb.readTable(TABLE);
+    let snap = await wb.readTable(TABLE);
+    if (String(fields[COL_YEAR] ?? "") !== "") snap = await withYearColumn(wb, snap);
     const headers = headersOf(snap.values[0]);
     const wineId = nextId(snap, "WineID", "W", 4);
     const hasLocations = headers.includes(COL_KC) && headers.includes(COL_HOME);
@@ -166,7 +185,7 @@ export function addWine(
       snap,
       values,
       hasLocations ? { Qty: QTY_FORMULA } : {},
-      hasLocations ? [COL_KC, COL_HOME] : ["Qty"],
+      hasLocations ? [COL_KC, COL_HOME, ...(values[COL_YEAR] ? [COL_YEAR] : [])] : ["Qty"],
     );
     const rec = recordFrom(headers, row);
     rec["Qty"] = bottles.kc + bottles.home;

@@ -127,6 +127,15 @@ export interface Wine {
   home: number | null;
   /** Legacy free-text location (replaced by kc/home). */
   loc: string | null;
+  /** Year bought ("Year Purchased" column, filled in automatically for wines added in the app). */
+  yearPurchased: number | null;
+}
+
+/** A plausible year (1900–2200), or null. */
+export function yearCell(v: Cell | undefined): number | null {
+  if (v === null || v === undefined || v === "") return null;
+  const n = typeof v === "number" ? v : Number(String(v).trim());
+  return Number.isInteger(n) && n >= 1900 && n <= 2200 ? n : null;
 }
 
 export function toWine(r: Record<string, Cell>): Wine {
@@ -153,6 +162,7 @@ export function toWine(r: Record<string, Cell>): Wine {
     kc: COL_KC in r ? count(r[COL_KC]) : null,
     home: COL_HOME in r ? count(r[COL_HOME]) : null,
     loc: str(r["Loc"]),
+    yearPurchased: yearCell(r["Year Purchased"]),
   };
 }
 

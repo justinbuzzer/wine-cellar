@@ -292,6 +292,11 @@ export class Workbook {
     await this.req("POST", `/worksheets/${enc(sheet)}/range(address='${address}')/delete`, { shift: "Up" });
   }
 
+  /** Adds a column at the end of a table. `values` is the header plus one cell per body row. */
+  async addTableColumn(table: string, values: Cell[][]): Promise<void> {
+    await this.req("POST", `/tables/${enc(table)}/columns/add`, { index: null, values: values.map((r) => r.map((v) => v ?? "")) });
+  }
+
   /** Appends a row to a table. Returns the new row's 0-based index and its values. */
   async addRow(table: string, row: Cell[]): Promise<{ index: number; values: Cell[][] }> {
     return this.req("POST", `/tables/${enc(table)}/rows`, { values: [row.map((v) => v ?? "")] });

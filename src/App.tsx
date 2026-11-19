@@ -17,6 +17,7 @@ import Notes from "./views/Notes";
 import Overview from "./views/Overview";
 import History from "./views/History";
 import Producers from "./views/Producers";
+import Sales from "./views/Sales";
 import { LogoProvider } from "./logos";
 
 export default function App({ account }: { account: AccountInfo | null }) {
@@ -67,11 +68,11 @@ function Shell({ account, tabs, children }: { account?: AccountInfo; tabs?: bool
       ? "cellar"
       : route[0] === "note"
         ? "notes"
-        : route[0] === "history" || route[0] === "producers"
+        : route[0] === "history" || route[0] === "producers" || route[0] === "sales"
           ? "overview"
           : route[0];
   const page = route[0] ?? "cellar";
-  const isListPage = page === "cellar" || page === "list" || page === "notes" || page === "overview" || page === "history" || page === "producers";
+  const isListPage = page === "cellar" || page === "list" || page === "notes" || page === "overview" || page === "history" || page === "producers" || page === "sales";
   return (
     <div className="app">
       <header className="topbar">
@@ -162,6 +163,8 @@ function Routes() {
       return <History key={arg ?? "all"} month={arg} />;
     case "producers":
       return <Producers />;
+    case "sales":
+      return <Sales key={arg ?? "all"} period={arg} />;
     case "diagnostics":
       return <Diagnostics />;
     default:

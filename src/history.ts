@@ -3,37 +3,30 @@
 // own "Opened" sheet — is created automatically the first time.
 
 import { config } from "./config";
-import { headersOf, recordFrom, type Cell, type Wine } from "./data";
-import { GraphError, withSession, type TableSnapshot, type Workbook } from "./graph";
+import { type Cell, type Wine } from "./data";
+import { withSession, type TableSnapshot, type Workbook } from "./graph";
 import { COL_HOME, COL_KC, LOCATION_COLUMN, type Location } from "./locations";
 import { excelSerial } from "./notesmodel";
 import { HISTORY_COLUMNS, toOpening, type Opening } from "./historymodel";
 import { result } from "./inventory";
-import { cellAddress, colLetter } from "./sheet";
-import { appendRow, locateById, nextId, setCells } from "./tableops";
+import { appendLog, readLog, removeLog, type LogSpec } from "./logtable";
+import { locateById, setCells, type Located } from "./tableops";
 
-const TABLE = config.tables.history;
-const SHEET = config.tables.history;
-const DATE_FORMAT = "d mmm yyyy";
+const SPEC: LogSpec = {
+  table: config.tables.history,
+  columns: HISTORY_COLUMNS,
+  idHeader: "OpenID",
+  idPrefix: "O",
+  idWidth: 5,
+  formats: { "Date Opened": "d mmm yyyy" },
+  what: "bottle history",
+};
 
 const count = (v: Cell) => (typeof v === "number" ? v : Number(v) || 0);
 
 /** The history table, or null if it hasn't been created yet. */
-export async function readHistory(wb: Workbook): Promise<TableSnapshot | null> {
-  try {
-    return await wb.readTable(TABLE);
-  } catch (e) {
-    if (e instanceof GraphError && (e.status === 404 || /notfound/i.test(e.code))) return null;
-    throw e;
-  }
-}
-
-const isBlank = (row: Cell[]) => row.every((v) => v === null || v === "");
-
-/** Row address (table columns only) of body row `i` (0-based). */
-function rowRange(snap: TableSnapshot, i: number): string {
-  const r = snap.address.firstRow + 1 + i;
-  return `${cellAddress(snap.address.firstCol, r)}:${cellAddress(snap.address.lastCol, r)}`;
+export function readHistory(wb: Workbook): Promise<TableSnapshot | null> {
+  return readLog(wb, SPEC.table);
 }
 
 async function logOpening(wb: Workbook, wine: Wine, from: Location, date: string, occasion: string): Promise<Opening> {
@@ -48,35 +41,33 @@ async function logOpening(wb: Workbook, wine: Wine, from: Location, date: string
     Price: wine.price,
     Occasion: occasion.trim(),
   };
+  return toOpening(await appendLog(wb, SPEC, values));
+}
 
-  const snap = await readHistory(wb);
-  if (!snap) {
-    values["OpenID"] = "O00001";
-    try {
-      await wb.addWorksheet(SHEET);
-    } catch (e) {
-      throw new Error(
-        `Couldn't add an "${SHEET}" sheet for bottle history. If a sheet with that name already exists, rename it and try again. (${e instanceof Error ? e.message : e})`,
-      );
-    }
-    const last = colLetter(HISTORY_COLUMNS.length - 1);
-    await wb.writeValues(SHEET, `A1:${last}2`, [[...HISTORY_COLUMNS], HISTORY_COLUMNS.map((h) => values[h] ?? "")]);
-    await wb.writeNumberFormat(SHEET, "B2", [[DATE_FORMAT]]);
-    await wb.addTable(SHEET, `A1:${last}2`, TABLE);
-    return toOpening(values);
+/** Finds the wine and checks it has bottle counts per location. */
+export async function locateWine(wb: Workbook, wineId: string): Promise<Located> {
+  const at = locateById(await wb.readTable(config.tables.inventory), "WineID", wineId, "Wine");
+  if (!at.headers.includes(COL_KC) || !at.headers.includes(COL_HOME)) {
+    throw new Error(`The Inventory table needs "${COL_KC}" and "${COL_HOME}" columns.`);
   }
+  return at;
+}
 
-  const headers = headersOf(snap.values[0]);
-  values["OpenID"] = nextId(snap, "OpenID", "O", 5);
-  // A table emptied by Undo keeps one blank row: fill that instead of adding below it.
-  const blank = snap.values.findIndex((r, k) => k > 0 && isBlank(r));
-  if (blank > 0) {
-    const row = headers.map((h) => values[h] ?? "");
-    await wb.writeValues(snap.address.sheet, rowRange(snap, blank - 1), [row]);
-    return toOpening(recordFrom(headers, row));
-  }
-  const row = await appendRow(wb, TABLE, snap, values);
-  return toOpening(recordFrom(headers, row));
+/** Takes `n` bottles off `from` (fails if there aren't enough there). */
+export async function takeBottles(wb: Workbook, at: Located, from: Location, n: number): Promise<Wine> {
+  const col = LOCATION_COLUMN[from];
+  const current = count(at.row[at.col(col)]);
+  if (current < n) throw new Error(n === 1 ? `There are no bottles at ${from}.` : `There are only ${current} bottles at ${from}.`);
+  await setCells(wb, at, { [col]: current - n });
+  return result(at);
+}
+
+/** Puts `n` bottles back at `to`. */
+export async function returnBottles(wb: Workbook, wineId: string, to: Location, n: number): Promise<Wine> {
+  const at = locateById(await wb.readTable(config.tables.inventory), "WineID", wineId, "Wine");
+  const col = LOCATION_COLUMN[to];
+  await setCells(wb, at, { [col]: count(at.row[at.col(col)]) + n });
+  return result(at);
 }
 
 export interface OpenResult {
@@ -94,15 +85,7 @@ export function openBottle(
   opts: { date: string; occasion: string },
 ): Promise<OpenResult> {
   return withSession(itemId, async (wb) => {
-    const at = locateById(await wb.readTable(config.tables.inventory), "WineID", wineId, "Wine");
-    if (!at.headers.includes(COL_KC) || !at.headers.includes(COL_HOME)) {
-      throw new Error(`The Inventory table needs "${COL_KC}" and "${COL_HOME}" columns.`);
-    }
-    const col = LOCATION_COLUMN[from];
-    const current = count(at.row[at.col(col)]);
-    if (current < 1) throw new Error(`There are no bottles at ${from}.`);
-    await setCells(wb, at, { [col]: current - 1 });
-    const wine = result(at);
+    const wine = await takeBottles(wb, await locateWine(wb, wineId), from, 1);
     try {
       return { wine, opening: await logOpening(wb, wine, from, opts.date, opts.occasion), logError: null };
     } catch (e) {
@@ -114,30 +97,13 @@ export function openBottle(
 /** Undo: puts the bottle back and removes its history row. */
 export function undoOpen(itemId: string, wineId: string, from: Location, openId: string | null): Promise<Wine> {
   return withSession(itemId, async (wb) => {
-    const at = locateById(await wb.readTable(config.tables.inventory), "WineID", wineId, "Wine");
-    const col = LOCATION_COLUMN[from];
-    await setCells(wb, at, { [col]: count(at.row[at.col(col)]) + 1 });
-    if (openId) await removeRow(wb, openId);
-    return result(at);
+    const wine = await returnBottles(wb, wineId, from, 1);
+    if (openId) await removeLog(wb, SPEC, openId);
+    return wine;
   });
 }
 
 /** Removes one history entry (bottle counts are not changed). */
 export function deleteOpening(itemId: string, openId: string): Promise<void> {
-  return withSession(itemId, (wb) => removeRow(wb, openId));
-}
-
-async function removeRow(wb: Workbook, openId: string): Promise<void> {
-  const snap = await readHistory(wb);
-  if (!snap) return;
-  const idCol = headersOf(snap.values[0]).indexOf("OpenID");
-  const i = snap.values.findIndex((r, k) => k > 0 && String(r[idCol] ?? "") === openId);
-  if (i < 0) return;
-  const body = snap.values.length - 1;
-  if (body === 1) {
-    // A table must keep at least one row: blank it instead of deleting it.
-    await wb.writeValues(snap.address.sheet, rowRange(snap, 0), [snap.values[0].map(() => "")]);
-  } else {
-    await wb.deleteRange(snap.address.sheet, rowRange(snap, i - 1));
-  }
+  return withSession(itemId, (wb) => removeLog(wb, SPEC, openId));
 }

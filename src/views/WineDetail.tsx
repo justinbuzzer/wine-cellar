@@ -12,13 +12,17 @@ import { bottles, Modal, Stepper, TypeDot, useToast } from "../ui";
 import { locationLine } from "./Cellar";
 import { LogoDialog, ProducerLogo, useLogos } from "../logos";
 import { producerKey } from "../producers";
+import { sellBottles, undoSale, type SaleDetails } from "../sales";
+import { formatHeld, formatPct, heldYears, lastBoughtYear, newestSales, saleMoney } from "../salesmodel";
 
-type Dialog = null | "open" | "add" | "move" | "arrived";
+type Dialog = null | "open" | "add" | "move" | "arrived" | "sell";
+
+const money = (n: number | null) => formatPrice(n === null ? null : Math.round(n * 100) / 100, config.currency);
 
 const other = (l: Location): Location => (l === "Home" ? "K Cellars" : "Home");
 
 export default function WineDetail({ id }: { id: string }) {
-  const { data, putWine, putOpening, removeOpening } = useWorkbook();
+  const { data, putWine, putOpening, removeOpening, putSale, removeSale } = useWorkbook();
   const toast = useToast();
   const [busy, setBusy] = useState(false);
   const [dialog, setDialog] = useState<Dialog>(null);
@@ -104,7 +108,41 @@ export default function WineDetail({ id }: { id: string }) {
     }
   };
 
+  const sell = async (l: Location, d: SaleDetails) => {
+    setBusy(true);
+    try {
+      const res = await sellBottles(itemId, id, l, d);
+      putWine(res.wine);
+      if (res.sale) putSale(res.sale);
+      setDialog(null);
+      const saleId = res.sale?.saleId ?? null;
+      toast({
+        text: res.logError
+          ? `Took ${bottles(d.bottles)} off ${l}, but the sale couldn't be recorded: ${describeError(res.logError)}`
+          : `Sold ${bottles(d.bottles)} from ${l}.`,
+        error: !!res.logError,
+        action: {
+          label: "Undo",
+          run: async () => {
+            try {
+              putWine(await undoSale(itemId, id, l, d.bottles, saleId));
+              if (saleId) removeSale(saleId);
+              toast({ text: "Undone." });
+            } catch (e) {
+              toast({ text: describeError(e), error: true });
+            }
+          },
+        },
+      });
+    } catch (e) {
+      toast({ text: describeError(e), error: true });
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const opened = newestOpenings(data.history.filter((o) => o.wineId === id));
+  const sold = newestSales(data.sales.filter((s) => s.wineId === id));
 
   const linked = data.tastings.filter((t) => t.wineId === id);
   const likely = data.tastings.filter(
@@ -184,6 +222,7 @@ export default function WineDetail({ id }: { id: string }) {
           </button>
           <button disabled={!hasLocations || busy} onClick={() => setDialog("add")}>+ Add bottles</button>
           <button disabled={!hasLocations || busy || stocked.length === 0} onClick={() => setDialog("move")}>⇄ Move</button>
+          <button disabled={!hasLocations || busy || stocked.length === 0} onClick={() => setDialog("sell")}>💰 Sell</button>
           {wine.status === "NYA" && (
             <button disabled={busy} onClick={() => setDialog("arrived")}>✓ Mark arrived</button>
           )}
@@ -207,6 +246,7 @@ export default function WineDetail({ id }: { id: string }) {
           <Fact label="Alcohol" value={wine.alcohol !== null ? `${wine.alcohol}%` : null} />
           <Fact label="Price" value={formatPrice(wine.price, config.currency)} />
           <Fact label="Source" value={wine.source} />
+          <Fact label="Year purchased" value={wine.yearPurchased} />
           <Fact label="Remarks" value={wine.remarks} />
           <Fact label="Wine ID" value={wine.wineId} />
         </dl>
@@ -226,6 +266,32 @@ export default function WineDetail({ id }: { id: string }) {
                   <span>{formatDay(o.date)}</span>
                   <span className="muted">{[o.from, o.occasion].filter(Boolean).join(" · ")}</span>
                   {note && <a href={href(`note/${note.tastingId}`)}>Note{note.score ? ` · ${note.score}` : ""}</a>}
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      )}
+
+      {sold.length > 0 && (
+        <section className="card">
+          <div className="card-head">
+            <h2>Sold ({sold.reduce((n, s) => n + s.bottles, 0)})</h2>
+            <a href={href("sales")}>All sales →</a>
+          </div>
+          <ul className="history-mini">
+            {sold.map((s) => {
+              const m = saleMoney(s);
+              return (
+                <li key={s.saleId}>
+                  <span>{formatDay(s.date)}</span>
+                  <span>
+                    {bottles(s.bottles)} at {money(s.salePrice)}
+                    {m.pct !== null && <span className="muted"> ({formatPct(m.pct)})</span>}
+                  </span>
+                  <span className="muted">
+                    {[s.buyer, heldYears(s) !== null ? `kept ${formatHeld(heldYears(s)).toLowerCase()}` : null].filter(Boolean).join(" · ")}
+                  </span>
                 </li>
               );
             })}
@@ -260,6 +326,20 @@ export default function WineDetail({ id }: { id: string }) {
           firstTime={!data.hasHistory}
           onClose={() => setDialog(null)}
           onOpen={(l, date, occasion) => void open(l, date, occasion)}
+        />
+      )}
+
+      {dialog === "sell" && (
+        <SellDialog
+          wine={wine}
+          stocked={stocked}
+          at={at}
+          busy={busy}
+          firstTime={!data.hasSales}
+          lastBought={wine.yearPurchased ?? lastBoughtYear(data.sales, id)}
+          boughtFromList={wine.yearPurchased !== null}
+          onClose={() => setDialog(null)}
+          onSell={(l, d) => void sell(l, d)}
         />
       )}
 
@@ -388,6 +468,159 @@ function OpenDialog({
       <div className="actions">
         <button className="primary" disabled={busy} onClick={() => onOpen(from, date, occasion)}>
           {busy ? "Saving…" : `🍷 Open from ${from}`}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+const priceValue = (s: string): number | null => {
+  const t = s.replace(/[^0-9.]/g, "");
+  if (!t) return null;
+  const n = Number(t);
+  return Number.isFinite(n) ? n : null;
+};
+
+function SellDialog({
+  wine,
+  stocked,
+  at,
+  busy,
+  firstTime,
+  lastBought,
+  boughtFromList,
+  onClose,
+  onSell,
+}: {
+  boughtFromList: boolean;
+  wine: Wine;
+  stocked: Location[];
+  at: (l: Location) => number;
+  busy: boolean;
+  firstTime: boolean;
+  lastBought: number | null;
+  onClose: () => void;
+  onSell: (l: Location, d: SaleDetails) => void;
+}) {
+  const [from, setFrom] = useState<Location>(stocked.includes("K Cellars") ? "K Cellars" : stocked[0]);
+  const [n, setN] = useState(1);
+  const [sale, setSale] = useState("");
+  const [bought, setBought] = useState(wine.price !== null ? String(wine.price) : "");
+  const [date, setDate] = useState(todayIso());
+  const [boughtIn, setBoughtIn] = useState(lastBought !== null ? String(lastBought) : "");
+  const [buyer, setBuyer] = useState("");
+  const [notes, setNotes] = useState("");
+  const [tried, setTried] = useState(false);
+
+  const max = at(from);
+  const count = Math.min(n, max);
+  const salePrice = priceValue(sale);
+  const boughtPrice = priceValue(bought);
+  const boughtYear = /^\d{4}$/.test(boughtIn.trim()) ? Number(boughtIn.trim()) : null;
+  const yearOk = boughtIn.trim() === "" || (boughtYear !== null && boughtYear >= 1900);
+  const tooLate = boughtYear !== null && boughtYear > Number(date.slice(0, 4));
+  const preview = salePrice !== null
+    ? saleMoney({
+        saleId: "", date, wineId: null, producer: null, name: null, vintage: null, type: null, from, bottles: count,
+        salePrice, boughtPrice, boughtYear: yearOk && !tooLate ? boughtYear : null, buyer: null, notes: null,
+      })
+    : null;
+  const held = yearOk && !tooLate && boughtYear !== null ? heldYears({ date, boughtYear }) : null;
+
+  const submit = () => {
+    setTried(true);
+    if (salePrice === null || !yearOk || tooLate) return;
+    onSell(from, { bottles: count, date, salePrice, boughtPrice, boughtYear, buyer, notes });
+  };
+
+  return (
+    <Modal title="Sell bottles" onClose={onClose}>
+      {stocked.length > 1 ? (
+        <div className="seg">
+          {stocked.map((l) => (
+            <button
+              key={l}
+              className={l === from ? "on" : ""}
+              onClick={() => {
+                setFrom(l);
+                setN(1);
+              }}
+            >
+              {l} ({at(l)})
+            </button>
+          ))}
+        </div>
+      ) : (
+        <p className="muted">From {from} ({bottles(max)})</p>
+      )}
+      {max > 1 && <Stepper value={count} min={1} max={max} onChange={setN} />}
+      <div className="row-2">
+        <label className="field">
+          <span>Sold for, per bottle (S$)</span>
+          <input
+            type="text"
+            inputMode="decimal"
+            value={sale}
+            placeholder="e.g. 180"
+            aria-invalid={tried && salePrice === null}
+            onChange={(e) => setSale(e.target.value)}
+          />
+        </label>
+        <label className="field">
+          <span>Paid, per bottle (S$)</span>
+          <input type="text" inputMode="decimal" value={bought} placeholder="unknown" onChange={(e) => setBought(e.target.value)} />
+        </label>
+      </div>
+      <div className="row-2">
+        <label className="field">
+          <span>Date sold</span>
+          <input type="date" value={date} max={todayIso()} onChange={(e) => setDate(e.target.value || todayIso())} />
+        </label>
+        <label className="field">
+          <span>Year bought{boughtFromList && boughtIn === String(lastBought) ? " (from the wine list)" : " (optional)"}</span>
+          <input
+            type="text"
+            inputMode="numeric"
+            maxLength={4}
+            value={boughtIn}
+            placeholder="e.g. 2016"
+            aria-invalid={tried && (!yearOk || tooLate)}
+            onChange={(e) => setBoughtIn(e.target.value.replace(/\D/g, ""))}
+          />
+        </label>
+      </div>
+      <label className="field">
+        <span>Buyer or where (optional)</span>
+        <input type="text" value={buyer} placeholder="e.g. a friend, auction house, shop" onChange={(e) => setBuyer(e.target.value)} />
+      </label>
+      <label className="field">
+        <span>Notes (optional)</span>
+        <input type="text" value={notes} placeholder="e.g. fees, condition" onChange={(e) => setNotes(e.target.value)} />
+      </label>
+
+      {tried && salePrice === null && <p className="form-errors">Enter the price you sold each bottle for.</p>}
+      {tried && !yearOk && <p className="form-errors">Write the year bought as four digits, e.g. 2016.</p>}
+      {tried && tooLate && <p className="form-errors">The year bought is after the year sold.</p>}
+
+      {preview && (
+        <p className="sell-preview">
+          <strong>{money(preview.revenue)}</strong> for {bottles(count)}
+          {preview.gain !== null && (
+            <>
+              {" · "}
+              {preview.gain >= 0 ? "gain" : "loss"} {money(Math.abs(preview.gain))} ({formatPct(preview.pct)})
+            </>
+          )}
+          {held !== null && <> · kept {formatHeld(held).toLowerCase()}</>}
+        </p>
+      )}
+      <p className="muted small">
+        Sales aren't added to the bottle history.
+        {firstTime && ' This first sale also adds a "Sold" sheet to your workbook.'}
+      </p>
+      <div className="actions">
+        <button className="primary" disabled={busy || max === 0} onClick={submit}>
+          {busy ? "Saving…" : `💰 Sell ${bottles(count)}`}
         </button>
       </div>
     </Modal>

@@ -44,9 +44,16 @@ interface Shared {
   where: Location;
   nya: boolean;
   beforeGst: boolean;
+  /** Year bought; defaults to this year. (Optional so drafts saved before it existed still load.) */
+  year?: string;
 }
 
-const DEFAULT_SHARED: Shared = { source: "", where: "K Cellars", nya: true, beforeGst: false };
+const thisYear = () => String(new Date().getFullYear());
+const DEFAULT_SHARED: Shared = { source: "", where: "K Cellars", nya: true, beforeGst: false, year: thisYear() };
+const yearValue = (s: Shared): number | null => {
+  const y = (s.year ?? thisYear()).trim();
+  return /^\d{4}$/.test(y) ? Number(y) : null;
+};
 let keyCounter = 0;
 const newKey = () => `line-${Date.now()}-${keyCounter++}`;
 const blankLine = (): Line => ({ key: newKey(), kind: "pick", wineId: "", fields: { ...EMPTY_NEW }, bottles: 1, price: "", state: "idle" });
@@ -141,6 +148,11 @@ export default function PurchaseForm() {
   async function saveAll() {
     setShowErrors(true);
     const problems = lines.map(validate).filter(Boolean);
+    const y = yearValue(shared);
+    if ((shared.year ?? "").trim() && (y === null || y < 1900 || y > new Date().getFullYear())) {
+      toast({ text: "Year purchased must be a year like 2026.", error: true });
+      return;
+    }
     if (problems.length) {
       toast({ text: `Fix ${problems.length} line${problems.length === 1 ? "" : "s"} first.`, error: true });
       return;
@@ -158,6 +170,7 @@ export default function PurchaseForm() {
           const { wine, markedNya } = await receiveBottles(data.file.id, line.wineId, shared.where, line.bottles, {
             price: price !== null && price !== before?.price ? price : undefined,
             notYetArrived: shared.nya,
+            yearPurchased: yearValue(shared),
           });
           putWine(wine);
           setLine(line.key, {
@@ -181,6 +194,7 @@ export default function PurchaseForm() {
             Source: shared.source.trim(),
             Status: shared.nya ? "NYA" : "",
             Remarks: f.remarks.trim(),
+            "Year Purchased": yearValue(shared) ?? "",
           };
           const wine = await addWine(data.file.id, cells, {
             kc: shared.where === "K Cellars" ? line.bottles : 0,
@@ -235,6 +249,15 @@ export default function PurchaseForm() {
               <button key={l} type="button" className={shared.where === l ? "on" : ""} onClick={() => setShared({ ...shared, where: l })}>{l}</button>
             ))}
           </div>
+        </Label>
+        <Label text="Year purchased">
+          <input
+            value={shared.year ?? thisYear()}
+            onChange={(e) => setShared({ ...shared, year: e.target.value.replace(/\D/g, "") })}
+            inputMode="numeric"
+            maxLength={4}
+            className="year-input"
+          />
         </Label>
         <label className="switch">
           <input type="checkbox" checked={shared.nya} onChange={(e) => setShared({ ...shared, nya: e.target.checked })} /> Not yet arrived

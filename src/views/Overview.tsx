@@ -11,6 +11,8 @@ import { useWorkbook } from "../store";
 import { TypeDot } from "../ui";
 import { TYPE_ORDER, typeLabel } from "../winelist";
 import { showInCellar } from "./Cellar";
+import { Columns } from "../charts";
+import { formatPct, salesByMonth, salesTotals } from "../salesmodel";
 
 const money = (n: number) => formatPrice(n, config.currency);
 
@@ -94,38 +96,28 @@ export default function Overview() {
           <Bars bars={c.byVintage} unit="bottle" />
         </section>
 
-        <section className="card">
-          <div className="card-head">
-            <h2>Bottles opened</h2>
-            <a href={href("history")}>History →</a>
-          </div>
-          {data.history.length === 0 ? (
-            <p className="muted">
-              Nothing yet. When you use 🍷 Open a bottle on a wine's page, it's recorded here.
-            </p>
-          ) : (
-            <>
-              <Columns bars={d.months} />
-              <p className="muted small">
-                {d.thisYear} bottle{d.thisYear === 1 ? "" : "s"} in {year}
-                {d.thisYearValue > 0 && <>, worth {money(d.thisYearValue)} at purchase price</>}.
+        <div className="ov-stack">
+          <section className="card ov-half">
+            <div className="card-head">
+              <h2>Bottles opened</h2>
+              <a href={href("history")}>History →</a>
+            </div>
+            {data.history.length === 0 ? (
+              <p className="muted">
+                Nothing yet. When you use 🍷 Open a bottle on a wine's page, it's recorded here.
               </p>
-              {d.favourites.length > 0 && (
-                <>
-                  <h3 className="ov-sub">Opened most this year</h3>
-                  <ul className="ov-list">
-                    {d.favourites.map((f) => (
-                      <li key={f.label}>
-                        {f.wineId ? <a href={href(`wine/${f.wineId}`)}>{f.label}</a> : f.label}
-                        <span className="muted"> × {f.count}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </>
-              )}
-            </>
-          )}
-        </section>
+            ) : (
+              <>
+                <Columns bars={d.months} compact onPick={(b) => go(`history/${b.key}`)} />
+                <p className="muted small">
+                  {d.thisYear} bottle{d.thisYear === 1 ? "" : "s"} in {year}
+                  {d.thisYearValue > 0 && <>, worth {money(d.thisYearValue)} at purchase price</>}.
+                </p>
+              </>
+            )}
+          </section>
+          <SalesCard today={today} />
+        </div>
 
         <section className="card">
           <h2>Tasting notes</h2>
@@ -217,23 +209,39 @@ function Scores({ bars }: { bars: Bar[] }) {
   );
 }
 
-/** Small column chart for bottles per month. */
-function Columns({ bars }: { bars: Bar[] }) {
-  const max = Math.max(1, ...bars.map((b) => b.value));
+/** Sales this year: how many, what they brought in, and the gain over what you paid. */
+function SalesCard({ today }: { today: string }) {
+  const { data } = useWorkbook();
+  const year = today.slice(0, 4);
+  const months = useMemo(() => salesByMonth(data.sales, today), [data.sales, today]);
+  const t = useMemo(() => salesTotals(data.sales.filter((s) => s.date?.startsWith(year))), [data.sales, year]);
   return (
-    <div className="cols" role="img" aria-label={bars.map((b) => `${b.label} ${b.value}`).join(", ")}>
-      {bars.map((b) => (
-        <button
-          key={b.key}
-          className="col"
-          title={`${b.label}: ${b.value} bottle${b.value === 1 ? "" : "s"}`}
-          onClick={() => go(`history/${b.key}`)}
-        >
-          <span className="col-value">{b.value || ""}</span>
-          <span className="col-bar" style={{ height: `${(b.value / max) * 100}%` }} />
-          <span className="col-label">{b.label}</span>
-        </button>
-      ))}
-    </div>
+    <section className="card ov-half">
+      <div className="card-head">
+        <h2>Sales</h2>
+        <a href={href("sales")}>Details →</a>
+      </div>
+      {data.sales.length === 0 ? (
+        <p className="muted">Nothing sold yet. When you use 💰 Sell on a wine's page, it's recorded here.</p>
+      ) : (
+        <>
+          <Columns
+            bars={months}
+            compact
+            title={(b) => `${b.label}: ${b.value} bottle${b.value === 1 ? "" : "s"} sold for ${money((b as (typeof months)[number]).revenue)}`}
+            onPick={(b) => go(`sales/${b.key}`)}
+          />
+          <p className="muted small">
+            {t.bottles} sold in {year} for {money(t.revenue)}
+            {t.cost > 0 && (
+              <>
+                {" "}· paid {money(t.cost)} · {t.gain >= 0 ? "gain" : "loss"} {money(Math.abs(t.gain))} ({formatPct(t.pct)})
+              </>
+            )}
+            .
+          </p>
+        </>
+      )}
+    </section>
   );
 }
