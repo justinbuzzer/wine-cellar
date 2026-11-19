@@ -10,6 +10,17 @@ import { forgetLogo, loadLogos, saveLogo } from "./offline";
 import { logoFileName, logoKeyFromFileName, producerKey } from "./producers";
 import { describeError } from "./store";
 import { Modal, useToast } from "./ui";
+import {
+  CropEditor,
+  fillView,
+  fitView,
+  loadImage,
+  renderCrop,
+  suggestCrop,
+  type LoadedImage,
+  type PreparedImage,
+  type View,
+} from "./logocrop";
 
 export interface LogoFile {
   id: string;
@@ -189,91 +200,7 @@ export function LogoProvider({ children }: { children: ReactNode }) {
 
 // ---- Preparing a picture ----------------------------------------------------
 
-export interface PreparedImage {
-  blob: Blob;
-  ext: "png" | "jpg";
-  url: string;
-}
-
-const WORK = 900; // working size for trimming
-const OUT = 480; // longest side of the saved logo
-
-/**
- * Shrinks a picture to a small logo, trims plain margins (common in
- * screenshots) and keeps transparency when the picture has it.
- */
-export async function prepareLogo(file: Blob): Promise<PreparedImage> {
-  const src = URL.createObjectURL(file);
-  try {
-    const img = new Image();
-    img.src = src;
-    try {
-      await img.decode();
-    } catch {
-      throw new Error("That file couldn't be read as a picture. Try a PNG or JPEG.");
-    }
-    const w0 = img.naturalWidth || OUT;
-    const h0 = img.naturalHeight || OUT;
-    const s = Math.min(1, WORK / Math.max(w0, h0));
-    const w = Math.max(1, Math.round(w0 * s));
-    const h = Math.max(1, Math.round(h0 * s));
-    const work = document.createElement("canvas");
-    work.width = w;
-    work.height = h;
-    const wctx = work.getContext("2d", { willReadFrequently: true })!;
-    wctx.drawImage(img, 0, 0, w, h);
-    const px = wctx.getImageData(0, 0, w, h).data;
-
-    let transparent = false;
-    for (let i = 3; i < px.length; i += 4) {
-      if (px[i] < 250) {
-        transparent = true;
-        break;
-      }
-    }
-
-    // Trim: anything matching the corner colour (or fully transparent) is margin.
-    const [r0, g0, b0] = [px[0], px[1], px[2]];
-    const isMargin = (i: number) =>
-      px[i + 3] < 16 ||
-      (!transparent && Math.abs(px[i] - r0) + Math.abs(px[i + 1] - g0) + Math.abs(px[i + 2] - b0) < 36);
-    let top = h, left = w, right = -1, bottom = -1;
-    for (let y = 0; y < h; y++) {
-      for (let x = 0; x < w; x++) {
-        if (!isMargin((y * w + x) * 4)) {
-          if (x < left) left = x;
-          if (x > right) right = x;
-          if (y < top) top = y;
-          if (y > bottom) bottom = y;
-        }
-      }
-    }
-    if (right < 0) [left, top, right, bottom] = [0, 0, w - 1, h - 1]; // blank picture: keep as is
-    const pad = Math.round(Math.max(right - left, bottom - top) * 0.04);
-    left = Math.max(0, left - pad);
-    top = Math.max(0, top - pad);
-    right = Math.min(w - 1, right + pad);
-    bottom = Math.min(h - 1, bottom + pad);
-    const cw = right - left + 1;
-    const ch = bottom - top + 1;
-
-    const k = Math.min(1, OUT / Math.max(cw, ch));
-    const out = document.createElement("canvas");
-    out.width = Math.max(1, Math.round(cw * k));
-    out.height = Math.max(1, Math.round(ch * k));
-    const octx = out.getContext("2d")!;
-    octx.imageSmoothingQuality = "high";
-    octx.drawImage(work, left, top, cw, ch, 0, 0, out.width, out.height);
-
-    const ext = transparent ? "png" : "jpg";
-    const blob = await new Promise<Blob>((resolve, reject) =>
-      out.toBlob((b) => (b ? resolve(b) : reject(new Error("Couldn't prepare the picture."))), transparent ? "image/png" : "image/jpeg", 0.88),
-    );
-    return { blob, ext, url: URL.createObjectURL(blob) };
-  } finally {
-    URL.revokeObjectURL(src);
-  }
-}
+// (See logocrop.tsx.)
 
 // ---- Showing a logo ---------------------------------------------------------
 
@@ -302,21 +229,35 @@ export function LogoDialog({ producer, wineCount, onClose }: { producer: string;
   const logos = useLogos();
   const toast = useToast();
   const current = logos.get(producer);
-  const [picked, setPicked] = useState<PreparedImage | null>(null);
+  const [picked, setPicked] = useState<{ src: LoadedImage; suggested: View; whole: View; fill: View } | null>(null);
+  const [view, setView] = useState<View | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmRemove, setConfirmRemove] = useState(false);
   const input = useRef<HTMLInputElement>(null);
 
-  useEffect(() => () => void (picked && URL.revokeObjectURL(picked.url)), [picked]);
+  useEffect(() => () => void (picked && URL.revokeObjectURL(picked.src.url)), [picked]);
 
-  const choose = async (f: File | undefined) => {
+  const choose = async (f: Blob | undefined) => {
     if (!f) return;
     setError(null);
     try {
-      setPicked(await prepareLogo(f));
+      const src = await loadImage(f);
+      const suggested = fitView(suggestCrop(src));
+      setPicked({ src, suggested, whole: fitView({ x: 0, y: 0, w: src.w, h: src.h }, 0), fill: fillView(src) });
+      setView(suggested);
     } catch (e) {
       setError(describeError(e));
+    }
+  };
+
+  /** Re-crop the logo already saved. */
+  const adjust = async () => {
+    if (!current) return;
+    try {
+      await choose(await fetch(current.src).then((r) => r.blob()));
+    } catch {
+      setError("Couldn't open the current logo to adjust it. Choose the picture again instead.");
     }
   };
 
@@ -338,23 +279,39 @@ export function LogoDialog({ producer, wineCount, onClose }: { producer: string;
 
   return (
     <Modal title={`Logo for ${producer}`} onClose={() => !busy && onClose()}>
-      <div className="logo-preview">
-        {picked ? (
-          <span className="logo-tile logo-preview-tile">
-            <img src={picked.url} alt="New logo" />
-          </span>
-        ) : current ? (
-          <span className="logo-tile logo-preview-tile">
-            <img src={current.src} alt="Current logo" />
-          </span>
-        ) : (
-          <span className="logo-tile logo-preview-tile logo-empty">No logo yet</span>
-        )}
-      </div>
+      {picked && view ? (
+        <>
+          <CropEditor
+            src={picked.src}
+            view={view}
+            onChange={setView}
+            minZ={picked.whole.z * 0.3}
+            maxZ={Math.max(picked.fill.z, picked.suggested.z) * 8}
+          />
+          <p className="muted small crop-help">
+            Drag to move. Pinch, scroll or use the slider to resize. What's inside the square is what shows on your
+            cards.
+          </p>
+          <div className="chips crop-presets">
+            <button type="button" className="chip-btn" onClick={() => setView(picked.suggested)}>Trim margins</button>
+            <button type="button" className="chip-btn" onClick={() => setView(picked.whole)}>Whole picture</button>
+            <button type="button" className="chip-btn" onClick={() => setView(picked.fill)}>Fill square</button>
+          </div>
+        </>
+      ) : (
+        <div className="logo-preview">
+          {current ? (
+            <span className="logo-tile logo-preview-tile">
+              <img src={current.src} alt="Current logo" />
+            </span>
+          ) : (
+            <span className="logo-tile logo-preview-tile logo-empty">No logo yet</span>
+          )}
+        </div>
+      )}
       <p className="muted small">
         Used for all {wineCount} wine{wineCount === 1 ? "" : "s"} from {producer}. Saved in your OneDrive under{" "}
-        <strong>{folder}</strong>. A screenshot from the winery's website or a photo of the label's crest works well;
-        plain margins are trimmed automatically.
+        <strong>{folder}</strong>. A screenshot from the winery's website or a photo of the label's crest works well.
       </p>
       <input
         ref={input}
@@ -379,17 +336,24 @@ export function LogoDialog({ producer, wineCount, onClose }: { producer: string;
         </>
       ) : (
         <div className="actions">
-          {picked ? (
+          {picked && view ? (
             <>
-              <button className="primary" disabled={busy} onClick={() => void run(() => logos.upload(producer, picked), "Logo saved.")}>
+              <button
+                className="primary"
+                disabled={busy}
+                onClick={() => void run(async () => logos.upload(producer, await renderCrop(picked.src, view)), "Logo saved.")}
+              >
                 {busy ? "Saving…" : "Save logo"}
               </button>
               <button disabled={busy} onClick={() => input.current?.click()}>Choose another</button>
             </>
           ) : (
-            <button className="primary" onClick={() => input.current?.click()}>
-              {current ? "Choose a new picture…" : "Choose picture…"}
-            </button>
+            <>
+              <button className="primary" onClick={() => input.current?.click()}>
+                {current ? "Choose a new picture…" : "Choose picture…"}
+              </button>
+              {current && <button onClick={() => void adjust()}>Adjust crop</button>}
+            </>
           )}
           {current && !picked && (
             <button className="link" onClick={() => setConfirmRemove(true)}>Remove logo</button>
