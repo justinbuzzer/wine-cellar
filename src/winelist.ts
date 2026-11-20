@@ -62,10 +62,12 @@ function vintageRank(v: Wine["vintage"]): number {
   return v ?? 99999;
 }
 
+/** Within a region: by appellation (the Location column), then producer, then vintage. */
 const byWine = (a: ListEntry, b: ListEntry) =>
+  cmp(a.wine.location, b.wine.location) ||
   cmp(a.wine.producer, b.wine.producer) ||
-  cmp(a.wine.name, b.wine.name) ||
-  vintageRank(a.wine.vintage) - vintageRank(b.wine.vintage);
+  vintageRank(a.wine.vintage) - vintageRank(b.wine.vintage) ||
+  cmp(a.wine.name, b.wine.name);
 
 function slug(s: string): string {
   return s.toLowerCase().normalize("NFD").replace(/\p{Mn}/gu, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
@@ -105,10 +107,9 @@ export function buildList(entries: ListEntry[], groupBy: GroupBy): ListSection[]
       section(t ?? "other", typeLabel(t), entries.filter((e) => e.wine.type === t), byWine),
     );
   }
-  // Region first: one section per country, regions inside, wines ordered by type.
-  const byTypeThenWine = (a: ListEntry, b: ListEntry) => typeRank(a.wine.type) - typeRank(b.wine.type) || byWine(a, b);
+  // Region first: one section per country, regions inside, wines by appellation.
   const countries = [...new Set(entries.map((e) => e.wine.country ?? "Other"))].sort(cmp);
   return countries.map((c) =>
-    section(c, c, entries.filter((e) => (e.wine.country ?? "Other") === c), byTypeThenWine),
+    section(c, c, entries.filter((e) => (e.wine.country ?? "Other") === c), byWine),
   );
 }
