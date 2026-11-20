@@ -8,6 +8,8 @@ dist/
 *.xlsm
 *.xls
 *.csv
+wine-research*.json
+research/
 
 # Invoices contain personal details — never commit them.
 invoice-samples/

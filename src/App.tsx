@@ -17,6 +17,7 @@ import Notes from "./views/Notes";
 import Overview from "./views/Overview";
 import History from "./views/History";
 import Producers from "./views/Producers";
+import Research from "./views/Research";
 import Sales from "./views/Sales";
 import { LogoProvider } from "./logos";
 
@@ -167,6 +168,8 @@ function Routes() {
       return <Sales key={arg ?? "all"} period={arg} />;
     case "diagnostics":
       return <Diagnostics />;
+    case "research":
+      return <Research />;
     default:
       return <Cellar />;
   }

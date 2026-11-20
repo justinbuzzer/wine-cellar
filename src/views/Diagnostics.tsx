@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import type { QtyIssue } from "../bottlecheck";
-import { shortName, type SchemaCheck } from "../data";
+import { shortName, type SchemaCheck, type Wine } from "../data";
 import { duplicateGroups } from "../dupes";
 import { href } from "../router";
 import { locationLine } from "./Cellar";
@@ -100,6 +100,18 @@ export default function Diagnostics() {
       </section>
 
       <section className="card">
+        <h2>Export for research</h2>
+        <p className="muted small">
+          Saves a list of your wines (producer, name, vintage, place, grape, type, alcohol and remarks; no prices, sources or
+          bottle counts) as <strong>wine-research.json</strong> in your Downloads folder, for Claude to research.
+        </p>
+        <div className="actions">
+          <button onClick={() => exportForResearch(wines, file.name)}>Export {wines.length} wines</button>
+          <a href={href("research")}>Review researched remarks →</a>
+        </div>
+      </section>
+
+      <section className="card">
         <h2>Dropdown lists</h2>
         <dl className="facts">
           {Object.entries(data.lists).map(([name, values]) => (
@@ -112,6 +124,22 @@ export default function Diagnostics() {
       </section>
     </>
   );
+}
+
+function exportForResearch(wines: Wine[], fileName: string) {
+  const rows = wines.map((w) => ({
+    wineId: w.wineId, producer: w.producer, name: w.name, vintage: w.vintage, country: w.country, region: w.region,
+    appellation: w.location, varietal: w.varietal, blend: w.blend, type: w.type, alcohol: w.alcohol, qty: w.qty,
+    remarks: w.remarks,
+  }));
+  const blob = new Blob([JSON.stringify({ workbook: fileName, exported: new Date().toISOString(), wines: rows }, null, 1)], {
+    type: "application/json",
+  });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "wine-research.json";
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
 
 function BottleCheck() {
