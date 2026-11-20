@@ -104,4 +104,10 @@ export function vintageBadge(p: Proposal): string {
  * What you decided for one wine. `text` is your edited remarks (undefined = as proposed);
  * `alcohol` is the value to fill (undefined = as proposed, null = don't fill it).
  */
-export type Decision = { status: "approved" | "rejected" | "saved"; text?: string; alcohol?: number | null };
+export type Decision = {
+  status: "approved" | "rejected" | "saved";
+  text?: string;
+  alcohol?: number | null;
+  /** You confirmed a renamed wine is still the same wine, so save despite the name change. */
+  force?: boolean;
+};

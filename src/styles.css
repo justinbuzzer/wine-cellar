@@ -673,3 +673,5 @@ button.bar-row:hover { background: var(--chip); }
 }.rs-alcohol { margin: 8px 0 0; }
 .rs-alc-input { width: 4.5em; padding: 2px 6px; margin: 0 2px; }
 .rs-done h3 { margin: 0 0 4px; }
+.rs-rename { margin: 4px 0 8px; }
+.rs-rename p { margin: 0 0 4px; }

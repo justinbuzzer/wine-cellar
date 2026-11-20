@@ -112,20 +112,24 @@ export function markArrived(itemId: string, wineId: string, where: Location): Pr
  *  - text goes into Remarks on a new line below anything already there (never replacing it);
  *  - alcohol (e.g. 13.5) fills Alcohol % only if that cell is blank right now.
  * Refuses if the row's producer, name or vintage no longer match what was researched,
- * so nothing lands on the wrong wine.
+ * so nothing lands on the wrong wine — unless `expect` is null, which you choose
+ * on the review screen after confirming a renamed wine is still the same wine.
  */
 export function applyResearch(
   itemId: string,
   wineId: string,
   add: { text: string; alcohol: number | null },
-  expect: Pick<Wine, "producer" | "name" | "vintage">,
+  expect: Pick<Wine, "producer" | "name" | "vintage"> | null,
 ): Promise<{ wine: Wine; alcoholFilled: boolean }> {
   return withSession(itemId, async (wb) => {
     const at = locateById(await wb.readTable(TABLE), "WineID", wineId, "Wine");
     const now = result(at);
     const same = (a: unknown, b: unknown) => String(a ?? "").trim().toLowerCase() === String(b ?? "").trim().toLowerCase();
-    if (!same(now.producer, expect.producer) || !same(now.name, expect.name) || !same(now.vintage, expect.vintage)) {
-      throw new Error(`${wineId} is now "${now.producer} ${now.name} ${now.vintage ?? ""}", not the wine that was researched.`);
+    if (expect && (!same(now.producer, expect.producer) || !same(now.name, expect.name) || !same(now.vintage, expect.vintage))) {
+      throw new Error(
+        `${wineId} is now "${now.producer} ${now.name} ${now.vintage ?? ""}", not the wine that was researched. ` +
+          `If you renamed it, reload the app, then tick "Same wine" on this card.`,
+      );
     }
     const changes: Record<string, Cell> = {};
     const existing = String(at.row[at.col("Remarks")] ?? "").trim();

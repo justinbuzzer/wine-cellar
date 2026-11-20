@@ -103,7 +103,7 @@ export default function Research() {
       if (d?.status !== "approved") continue;
       try {
         const alcohol = d.alcohol === undefined ? (p.alcohol ?? null) : d.alcohol;
-        const r = await applyResearch(data.file.id, p.wineId, { text: d.text ?? p.text, alcohol }, p);
+        const r = await applyResearch(data.file.id, p.wineId, { text: d.text ?? p.text, alcohol }, d.force ? null : p);
         putWine(r.wine);
         decide(p.wineId, { ...d, status: "saved" });
         saved++;
@@ -220,7 +220,11 @@ function ProposalCard({
   const alc = canFillAlc && fillAlc ? alcoholValue(alcText) : null;
   const alcInvalid = canFillAlc && fillAlc && alc === null;
   const empty = !p.text && !canFillAlc;
-  const approve = (t?: string) => onDecide({ status: "approved", text: t, alcohol: canFillAlc ? alc : null });
+  // A renamed wine (same WineID, different name) can be saved once you confirm it's the same wine.
+  const [override, setOverride] = useState(!!decision?.force);
+  const blocked = !!match.problem && !(override && match.wine);
+  const approve = (t?: string) =>
+    onDecide({ status: "approved", text: t, alcohol: canFillAlc ? alc : null, force: override && !!match.problem });
 
   return (
     <section className={`card rs-card${status ? ` rs-${status}` : ""}`}>
@@ -249,7 +253,25 @@ function ProposalCard({
         <span className={`rs-badge${p.vintageMatch === "exact" ? " rs-exact" : " rs-vintage-warn"}`}>{vintageBadge(p)}</span>
       </div>
       {p.caveat && <p className="warn small">{p.caveat}</p>}
-      {match.problem && <p className="warn small">{match.problem}</p>}
+      {match.problem && (
+        <div className="rs-rename">
+          <p className="warn small">{match.problem}</p>
+          {match.wine && status !== "saved" && (
+            <label className="small">
+              <input
+                type="checkbox"
+                checked={override}
+                onChange={(e) => {
+                  setOverride(e.target.checked);
+                  // Already approved: update the approval so Save uses (or stops using) the override.
+                  if (status === "approved") onDecide({ ...decision!, force: e.target.checked });
+                }}
+              />{" "}
+              Same wine, I renamed it — save to {p.wineId} anyway
+            </label>
+          )}
+        </div>
+      )}
       {saveError && <p className="warn small">Couldn't save: {saveError}</p>}
 
       {match.wine?.remarks && (
@@ -304,7 +326,7 @@ function ProposalCard({
           <button onClick={() => { setDraft(text); setEditing(false); }}>Cancel</button>
           <button
             className="primary"
-            disabled={!draft.trim() || !!match.problem || alcInvalid}
+            disabled={!draft.trim() || blocked || alcInvalid}
             onClick={() => { approve(draft.trim()); setEditing(false); }}
           >
             Approve edited text
@@ -317,9 +339,9 @@ function ProposalCard({
           ) : (
             <>
               <button onClick={() => onDecide({ status: "rejected" })}>✕ {empty ? "Dismiss" : "Reject"}</button>
-              {p.text && <button onClick={() => { setDraft(text); setEditing(true); }} disabled={!!match.problem}>✎ Edit</button>}
+              {p.text && <button onClick={() => { setDraft(text); setEditing(true); }} disabled={blocked}>✎ Edit</button>}
               {!empty && (
-                <button className="primary" onClick={() => approve()} disabled={!!match.problem || alcInvalid}>
+                <button className="primary" onClick={() => approve()} disabled={blocked || alcInvalid}>
                   ✓ Approve
                 </button>
               )}
