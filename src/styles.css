@@ -581,7 +581,7 @@ button.bar-row:hover { background: var(--chip); }
   /* Always print black on white, whichever theme is on screen. */
   :root, :root[data-theme="dark"] { --bg: #fff; --surface: #fff; --text: #111; --muted: #555; --border: #ccc; --accent: #5e1324; --gold: #a8844a; color-scheme: light; }
   body { background: #fff; color: #111; }
-  .topbar, .tabs, .foot, .banner, .notice, .toast, .wl-controls, .wl-jump, .to-top { display: none !important; }
+  .topbar, .tabs, .foot, .banner, .notice, .toast, .wl-controls, .wl-jump, .to-top, .sheet-backdrop { display: none !important; }
   .app { max-width: none; padding: 0; }
   .winelist { border: none; border-radius: 0; padding: 0; font-size: 10.5pt; }
   .wl-header { margin-bottom: 18pt; }
@@ -610,3 +610,32 @@ button.bar-row:hover { background: var(--chip); }
 /* Cellar: what you've spent at a source */
 .spend-card { margin: 0 0 12px; padding: 10px 14px; }
 .spend-card .small { margin-top: 2px; }
+
+/* Wine list: tap a wine for its details */
+.wl-tap { cursor: pointer; border-radius: 6px; }
+.wl-tap:hover { background: var(--hover, rgba(0, 0, 0, 0.04)); }
+.wl-tap:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.wine-sheet { max-width: 520px; padding-top: 8px; transition: transform 0.15s; }
+.wine-sheet:focus { outline: none; }
+.sheet-grip { width: 36px; height: 4px; border-radius: 2px; background: var(--border); margin: 0 auto 10px; }
+@media (min-width: 600px) { .sheet-grip { display: none; } }
+.sheet-head { display: flex; gap: 12px; align-items: center; }
+.sheet-title { flex: 1; min-width: 0; }
+.sheet-title .detail-title { margin: 2px 0 0; }
+.sheet-close { align-self: flex-start; font-size: 1.1rem; }
+.ws-tags { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 0; }
+.ws-tag { font-size: 0.8rem; padding: 2px 8px; border-radius: 6px; background: var(--chip); color: var(--muted); }
+.sheet-facts { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 14px; margin: 14px 0; }
+.sheet-facts dt { font-size: 0.78rem; color: var(--muted); }
+.sheet-facts dd { margin: 0; }
+.sheet-facts .wide { grid-column: 1 / -1; }
+.sheet-notes-head { display: flex; justify-content: space-between; align-items: baseline; border-top: 1px solid var(--border); padding-top: 12px; }
+.sheet-notes-head h3 { margin: 0; font-size: 1rem; }
+.sheet-note { border: 1px solid var(--border); border-radius: 10px; margin-top: 8px; }
+.sheet-note-head { display: flex; width: 100%; justify-content: space-between; align-items: center; background: none; border: 0; padding: 10px 12px; text-align: left; }
+.sheet-note-score { font-size: 1.15rem; font-weight: 600; }
+.sheet-note-body { padding: 0 12px 12px; }
+.sheet-note-body p { margin: 4px 0; font-size: 0.92rem; }
+.sheet-note-body .ws-tags { margin: 6px 0 2px; }
+.sheet-verdict { font-style: italic; color: var(--muted); }
+.sheet-others { margin-top: 12px; }

@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { config } from "../config";
-import { formatPrice, shortName } from "../data";
+import { formatPrice, shortName, type Wine } from "../data";
+import WineSheet from "./WineSheet";
 import { LOCATIONS } from "../locations";
 import { useWorkbook } from "../store";
 import { buildList, selectEntries, type GroupBy, type ListLocation } from "../winelist";
@@ -29,6 +30,8 @@ export default function WineList() {
   const { data } = useWorkbook();
   const [s, setS] = useState<Settings>(loadSettings);
   const update = (p: Partial<Settings>) => setS((prev) => ({ ...prev, ...p }));
+  const [open, setOpen] = useState<Wine | null>(null);
+  const close = useCallback(() => setOpen(null), []);
 
   useEffect(() => {
     try {
@@ -114,7 +117,15 @@ export default function WineList() {
                   {g.region && <h4 className="wl-region">{g.region}</h4>}
                   <ul>
                     {g.entries.map(({ wine, bottles }) => (
-                      <li key={wine.wineId ?? `${wine.name}-${wine.vintage}`} className="wl-item">
+                      <li
+                        key={wine.wineId ?? `${wine.name}-${wine.vintage}`}
+                        className="wl-item wl-tap"
+                        role="button"
+                        tabIndex={0}
+                        aria-label={`Details for ${wine.producer ?? ""} ${shortName(wine)} ${wine.vintage ?? ""}`}
+                        onClick={() => setOpen(wine)}
+                        onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), setOpen(wine))}
+                      >
                         <div className="wl-line">
                           <span className="wl-vintage">{wine.vintage ?? ""}</span>
                           <span className="wl-wine">
@@ -138,6 +149,8 @@ export default function WineList() {
           </section>
         ))}
       </article>
+
+      {open && <WineSheet wine={open} onClose={close} />}
     </>
   );
 }
