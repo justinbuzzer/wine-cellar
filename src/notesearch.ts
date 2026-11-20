@@ -3,6 +3,7 @@
 import type { Tasting } from "./data";
 
 export type NoteSort = "newest" | "score" | "name";
+export type GrapeKind = "" | "single" | "blend";
 
 export interface NoteQuery {
   q: string;
@@ -10,6 +11,8 @@ export interface NoteQuery {
   country: string;
   region: string;
   varietal: string;
+  /** Single varietals only, blends only, or either. */
+  kind: GrapeKind;
   minScore: number;
   year: string;
   source: string;
@@ -17,8 +20,21 @@ export interface NoteQuery {
 }
 
 export const EMPTY_QUERY: NoteQuery = {
-  q: "", type: "", country: "", region: "", varietal: "", minScore: 0, year: "", source: "", sort: "newest",
+  q: "", type: "", country: "", region: "", varietal: "", kind: "", minScore: 0, year: "", source: "", sort: "newest",
 };
+
+/**
+ * Whether a note is for a blend. The Blend column decides when it says so
+ * ("Blend" vs "Single…"/"Mono…"); otherwise a varietal naming several grapes
+ * ("Cabernet Sauvignon, Merlot", "Grenache/Syrah", "GSM", "Red blend") counts.
+ */
+export function isBlend(t: Pick<Tasting, "blend" | "varietal">): boolean {
+  const b = (t.blend ?? "").trim();
+  if (/single|mono|varietal/i.test(b)) return false;
+  if (/blend|cuv[eé]e|assemblage/i.test(b)) return true;
+  const v = (t.varietal ?? "").trim();
+  return /[,/&+]|\band\b|\bblend\b|^gsm$|meritage/i.test(v);
+}
 
 /** Lower-case, accent-free text so "cote" finds "Côte". */
 export function fold(s: string | number | null | undefined): string {
@@ -72,6 +88,7 @@ export function searchNotes(all: Tasting[], query: NoteQuery): Tasting[] {
       if (query.year && String(t.yearTasted ?? "") !== query.year) return false;
       if (query.minScore && (t.score ?? 0) < query.minScore) return false;
       if (!contains(t.varietal, query.varietal)) return false;
+      if (query.kind && isBlend(t) !== (query.kind === "blend")) return false;
       if (!contains(t.source, query.source)) return false;
       if (words.length) {
         const h = hay(t);

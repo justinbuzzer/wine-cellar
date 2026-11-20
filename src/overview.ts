@@ -2,6 +2,7 @@
 
 import type { Tasting, Wine } from "./data";
 import type { Opening } from "./historymodel";
+import { isBlend } from "./notesearch";
 
 export interface Bar {
   key: string;
@@ -64,6 +65,12 @@ export function vintageBucket(v: Wine["vintage"]): string {
   return `${start}–${String(start + 4).slice(2)}`;
 }
 
+/** The vintage buckets these wines fall in, oldest first, then NV and Unknown. */
+export function vintageBuckets(wines: Wine[]): string[] {
+  const rank = (s: string) => (s === "NV" ? 99999 : s === "Unknown" ? 100000 : s === "Before 1990" ? 0 : Number(s.slice(0, 4)));
+  return [...new Set(wines.map((w) => vintageBucket(w.vintage)))].sort((a, b) => rank(a) - rank(b));
+}
+
 /** `typeOrder` is the display order for wine types (TYPE_ORDER in winelist.ts). */
 export function cellarStats(all: Wine[], typeOrder: string[]): CellarStats {
   const current = all.filter((w) => w.qty > 0);
@@ -71,10 +78,7 @@ export function cellarStats(all: Wine[], typeOrder: string[]): CellarStats {
   const nya = current.filter((w) => w.status === "NYA");
   const sum = (xs: Wine[], f: (w: Wine) => number) => xs.reduce((s, w) => s + f(w), 0);
 
-  const vintageOrder = [...new Set(current.map((w) => vintageBucket(w.vintage)))].sort((a, b) => {
-    const rank = (s: string) => (s === "NV" ? 99999 : s === "Unknown" ? 100000 : s === "Before 1990" ? 0 : Number(s.slice(0, 4)));
-    return rank(a) - rank(b);
-  });
+  const vintageOrder = vintageBuckets(current);
 
   return {
     wines: current.length,
@@ -165,18 +169,11 @@ function averages(ts: Tasting[], keyOf: (t: Tasting) => string | null, minNotes:
     .slice(0, n);
 }
 
-/**
- * Whether a note is for a blend. The Blend column decides when it says so
- * ("Blend" vs "Single…"/"Mono…"); otherwise a varietal naming several grapes
- * ("Cabernet Sauvignon, Merlot", "Grenache/Syrah", "GSM", "Red blend") counts.
- */
-export function isBlend(t: Pick<Tasting, "blend" | "varietal">): boolean {
-  const b = (t.blend ?? "").trim();
-  if (/single|mono|varietal/i.test(b)) return false;
-  if (/blend|cuv[eé]e|assemblage/i.test(b)) return true;
-  const v = (t.varietal ?? "").trim();
-  return /[,/&+]|\band\b|\bblend\b|^gsm$|meritage/i.test(v);
-}
+export { isBlend };
+
+/** "Burgundy, France", or just the region when there's no country. */
+export const regionLabel = (t: Pick<Tasting, "region" | "country">): string | null =>
+  t.region ? (t.country ? `${t.region}, ${t.country}` : t.region) : null;
 
 export const MIN_NOTES = 10;
 
@@ -187,7 +184,7 @@ export function noteStats(tastings: Tasting[], today: string, minNotes = MIN_NOT
     notes: tastings.length,
     thisYear: tastings.filter((t) => t.yearTasted === year || (t.dateTasted ?? "").startsWith(String(year))).length,
     average: scored.length ? Math.round((scored.reduce((s, t) => s + t.score!, 0) / scored.length) * 10) / 10 : null,
-    topRegions: averages(tastings, (t) => (t.region ? (t.country ? `${t.region}, ${t.country}` : t.region) : null), minNotes, 5),
+    topRegions: averages(tastings, regionLabel, minNotes, 5),
     topSingles: averages(tastings, (t) => (isBlend(t) ? null : t.varietal), minNotes, 5),
     topBlends: averages(tastings, (t) => (isBlend(t) ? t.varietal : null), minNotes, 5),
   };

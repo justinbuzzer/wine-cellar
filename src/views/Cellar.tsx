@@ -6,6 +6,8 @@ import { ProducerLogo } from "../logos";
 import { forgetScroll, go, href } from "../router";
 import { useWorkbook } from "../store";
 import { bottles, restoreListPosition, TypeDot } from "../ui";
+import { vintageBucket, vintageBuckets } from "../overview";
+import { spendOn } from "../spend";
 
 type StatusFilter = "current" | "cellar" | "nya" | "finished" | "everything";
 type SortKey = "producer" | "region" | "vintage" | "price" | "qty";
@@ -16,11 +18,16 @@ interface Filters {
   type: string;
   country: string;
   region: string;
+  /** A vintage bucket from the Overview ("2015–19", "NV", …). */
+  vintage: string;
+  source: string;
   loc: "all" | Location;
   sort: SortKey;
 }
 
-const DEFAULTS: Filters = { q: "", status: "current", type: "", country: "", region: "", loc: "all", sort: "producer" };
+const DEFAULTS: Filters = {
+  q: "", status: "current", type: "", country: "", region: "", vintage: "", source: "", loc: "all", sort: "producer",
+};
 
 // Kept outside the component so filters survive visiting a wine and coming back.
 let saved: Filters = DEFAULTS;
@@ -93,12 +100,16 @@ export default function Cellar() {
   );
   const countries = uniq(data.wines.map((w) => w.country));
   const regions = uniq(data.wines.filter((w) => !f.country || w.country === f.country).map((w) => w.region));
+  const sources = useMemo(() => uniq(data.wines.map((w) => w.source)), [data.wines]);
+  const vintages = useMemo(() => vintageBuckets(data.wines), [data.wines]);
 
-  const list = useMemo(() => {
+  // Every filter except status, so "spent" includes finished wines too.
+  const matching = useMemo(() => {
     const tokens = f.q.toLocaleLowerCase().split(/\s+/).filter(Boolean);
     return data.wines
-      .filter((w) => matchesStatus(w, f.status))
       .filter((w) => !f.type || w.type === f.type)
+      .filter((w) => !f.vintage || vintageBucket(w.vintage) === f.vintage)
+      .filter((w) => !f.source || w.source === f.source)
       .filter((w) => !f.country || w.country === f.country)
       .filter((w) => !f.region || w.region === f.region)
       .filter((w) => {
@@ -111,9 +122,13 @@ export default function Cellar() {
           .join(" ")
           .toLocaleLowerCase();
         return tokens.every((t) => hay.includes(t));
-      })
-      .sort(SORTS[f.sort]);
+      });
   }, [data.wines, f]);
+  const list = useMemo(() => matching.filter((w) => matchesStatus(w, f.status)).sort(SORTS[f.sort]), [matching, f.status, f.sort]);
+  const spent = useMemo(
+    () => (f.source ? spendOn(matching, data.history, data.sales) : null),
+    [f.source, matching, data.history, data.sales],
+  );
 
   const totalBottles = list.reduce((s, w) => {
     if (f.loc !== "all" && w.kc !== null && w.home !== null) return s + (f.loc === "Home" ? w.home : w.kc);
@@ -180,6 +195,18 @@ export default function Cellar() {
               <option key={r}>{r}</option>
             ))}
           </select>
+          <select value={f.vintage} onChange={(e) => update({ vintage: e.target.value })} aria-label="Vintage">
+            <option value="">All vintages</option>
+            {vintages.map((v) => (
+              <option key={v}>{v}</option>
+            ))}
+          </select>
+          <select value={f.source} onChange={(e) => update({ source: e.target.value })} aria-label="Source">
+            <option value="">All sources</option>
+            {sources.map((s) => (
+              <option key={s}>{s}</option>
+            ))}
+          </select>
           <select value={f.sort} onChange={(e) => update({ sort: e.target.value as SortKey })} aria-label="Sort">
             <option value="producer">Sort: Producer</option>
             <option value="region">Sort: Region</option>
@@ -203,6 +230,20 @@ export default function Cellar() {
           <button className="primary small" onClick={() => go("purchase")}>+ Add purchase</button>
         </span>
       </div>
+
+      {spent && (
+        <div className="card spend-card">
+          <div>
+            Spent at <strong>{f.source}</strong>: <strong>{formatPrice(spent.total, config.currency)}</strong> on{" "}
+            {bottles(spent.bottles)}
+          </div>
+          <div className="muted small">
+            Bottles you still have, have opened or sold, from {matching.length} wine{matching.length === 1 ? "" : "s"} (finished
+            ones included). Bottles opened before the app kept a history aren't counted
+            {spent.unpriced > 0 && <>, and {bottles(spent.unpriced)} with no price aren't in the total</>}.
+          </div>
+        </div>
+      )}
 
       {list.length === 0 ? (
         <p className="muted center-text">No wines match.</p>

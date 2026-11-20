@@ -1,7 +1,7 @@
 import { useLayoutEffect, useMemo, useState } from "react";
 import { shortName, type Tasting } from "../data";
-import { EMPTY_QUERY, fold, highlightParts, searchNotes, tokens, type NoteQuery, type NoteSort } from "../notesearch";
-import { go, href } from "../router";
+import { EMPTY_QUERY, fold, highlightParts, searchNotes, tokens, type GrapeKind, type NoteQuery, type NoteSort } from "../notesearch";
+import { forgetScroll, go, href } from "../router";
 import { useWorkbook } from "../store";
 import { restoreListPosition, TypeDot } from "../ui";
 
@@ -12,6 +12,16 @@ let savedShown = 50;
 let lastOpened: string | null = null;
 
 const PAGE = 50;
+
+/** Opens Notes with these filters, best scores first (used by the Overview page). */
+export function showInNotes(p: Partial<NoteQuery>) {
+  saved = { ...EMPTY_QUERY, sort: "score", ...p };
+  savedShown = PAGE;
+  lastOpened = null;
+  forgetScroll("notes");
+  go("notes");
+}
+
 const SCORES = [85, 88, 90, 92, 94, 96];
 
 const uniq = (xs: (string | number | null)[]) =>
@@ -93,6 +103,11 @@ export default function Notes() {
               list="dl-notes-varietal"
               aria-label="Grape"
             />
+            <select value={f.kind} onChange={(e) => update({ kind: e.target.value as GrapeKind })} aria-label="Single varietal or blend">
+              <option value="">Single & blends</option>
+              <option value="single">Single varietal</option>
+              <option value="blend">Blends</option>
+            </select>
             <select value={f.minScore} onChange={(e) => update({ minScore: Number(e.target.value) })} aria-label="Minimum score">
               <option value={0}>Any score</option>
               {SCORES.map((s) => <option key={s} value={s}>{s}+</option>)}

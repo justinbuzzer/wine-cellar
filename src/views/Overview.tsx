@@ -5,7 +5,8 @@ import { LOCATIONS, type Location } from "../locations";
 import { useLogos } from "../logos";
 import { producerGroups } from "../producers";
 import { todayIso } from "../notesmodel";
-import { cellarStats, drinkingStats, MIN_NOTES, noteStats, topN, type Bar } from "../overview";
+import { cellarStats, drinkingStats, MIN_NOTES, noteStats, regionLabel, topN, type Bar } from "../overview";
+import { showInNotes } from "./Notes";
 import { go, href } from "../router";
 import { useWorkbook } from "../store";
 import { TypeDot } from "../ui";
@@ -96,7 +97,7 @@ export default function Overview() {
 
         <section className="card">
           <h2>By vintage</h2>
-          <Bars bars={c.byVintage} unit="bottle" />
+          <Bars bars={c.byVintage} unit="bottle" onPick={(b) => showInCellar({ vintage: b.key })} />
         </section>
 
         <div className="ov-stack">
@@ -131,19 +132,25 @@ export default function Overview() {
           {n.topRegions.length > 0 && (
             <>
               <h3 className="ov-sub">Best-scoring regions</h3>
-              <Scores bars={n.topRegions} />
+              <Scores
+                bars={n.topRegions}
+                onPick={(b) => {
+                  const t = data.tastings.find((x) => regionLabel(x) === b.key);
+                  if (t) showInNotes({ country: t.country ?? "", region: t.region ?? "" });
+                }}
+              />
             </>
           )}
           {n.topSingles.length > 0 && (
             <>
               <h3 className="ov-sub">Best-scoring grapes · single varietal</h3>
-              <Scores bars={n.topSingles} />
+              <Scores bars={n.topSingles} onPick={(b) => showInNotes({ varietal: b.key, kind: "single" })} />
             </>
           )}
           {n.topBlends.length > 0 && (
             <>
               <h3 className="ov-sub">Best-scoring blends</h3>
-              <Scores bars={n.topBlends} />
+              <Scores bars={n.topBlends} onPick={(b) => showInNotes({ varietal: b.key, kind: "blend" })} />
             </>
           )}
           <p className="muted small">Averages need at least {MIN_NOTES} scored notes.</p>
@@ -198,22 +205,25 @@ function Bars({ bars, unit, dot, onPick }: { bars: Bar[]; unit: string; dot?: bo
 }
 
 /** Average scores, shown on an 80–100 scale. */
-function Scores({ bars }: { bars: Bar[] }) {
+function Scores({ bars, onPick }: { bars: Bar[]; onPick: (b: Bar) => void }) {
   return (
     <ul className="bars">
-      {bars.map((b) => (
-        <li key={b.key} title={`${b.label}: average ${b.value} from ${b.sub}`}>
-          <div className="bar-row">
-            <span className="bar-label">
-              {b.label} <span className="muted small">({b.sub})</span>
-            </span>
-            <span className="bar-track">
-              <span className="bar-fill" style={{ width: `${Math.max(2, ((b.value - 80) / 20) * 100)}%` }} />
-            </span>
-            <span className="bar-value">{b.value}</span>
-          </div>
-        </li>
-      ))}
+      {bars.map((b) => {
+        const title = `${b.label}: average ${b.value} from ${b.sub}`;
+        return (
+          <li key={b.key} title={title}>
+            <button className="bar-row" onClick={() => onPick(b)} aria-label={`${title}. Show these notes`}>
+              <span className="bar-label">
+                {b.label} <span className="muted small">({b.sub})</span>
+              </span>
+              <span className="bar-track">
+                <span className="bar-fill" style={{ width: `${Math.max(2, ((b.value - 80) / 20) * 100)}%` }} />
+              </span>
+              <span className="bar-value">{b.value}</span>
+            </button>
+          </li>
+        );
+      })}
     </ul>
   );
 }

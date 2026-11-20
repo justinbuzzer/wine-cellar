@@ -606,3 +606,7 @@ button.bar-row:hover { background: var(--chip); }
   .history-list li { grid-template-columns: 1fr auto; }
   .history-list .h-date { grid-column: 1 / -1; }
 }
+
+/* Cellar: what you've spent at a source */
+.spend-card { margin: 0 0 12px; padding: 10px 14px; }
+.spend-card .small { margin-top: 2px; }
