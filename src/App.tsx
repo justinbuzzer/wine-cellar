@@ -56,9 +56,9 @@ export default function App({ account }: { account: AccountInfo | null }) {
 
 const TABS = [
   { path: "cellar", label: "Cellar" },
-  { path: "list", label: "Wine list" },
   { path: "notes", label: "Notes" },
   { path: "overview", label: "Overview" },
+  { path: "list", label: "Wine list" },
 ];
 
 function Shell({ account, tabs, children }: { account?: AccountInfo; tabs?: boolean; children: ReactNode }) {
