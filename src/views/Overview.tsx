@@ -5,7 +5,7 @@ import { LOCATIONS, type Location } from "../locations";
 import { useLogos } from "../logos";
 import { producerGroups } from "../producers";
 import { todayIso } from "../notesmodel";
-import { cellarStats, drinkingStats, noteStats, topN, type Bar } from "../overview";
+import { cellarStats, drinkingStats, MIN_NOTES, noteStats, topN, type Bar } from "../overview";
 import { go, href } from "../router";
 import { useWorkbook } from "../store";
 import { TypeDot } from "../ui";
@@ -22,6 +22,9 @@ function LogoProgress() {
   const logos = useLogos();
   const groups = useMemo(() => producerGroups(data.wines), [data.wines]);
   const done = groups.filter((g) => logos.get(g.name)).length;
+  // Only worth showing while some producers still need one (and once the logo
+  // folder has been read, so it doesn't flash up while loading).
+  if (logos.status === "loading" || done >= groups.length) return null;
   return (
     <a className="card prompt-card" href={href("producers")}>
       <strong>Producer logos</strong>
@@ -131,13 +134,19 @@ export default function Overview() {
               <Scores bars={n.topRegions} />
             </>
           )}
-          {n.topGrapes.length > 0 && (
+          {n.topSingles.length > 0 && (
             <>
-              <h3 className="ov-sub">Best-scoring grapes</h3>
-              <Scores bars={n.topGrapes} />
+              <h3 className="ov-sub">Best-scoring grapes · single varietal</h3>
+              <Scores bars={n.topSingles} />
             </>
           )}
-          <p className="muted small">Averages need at least 3 scored notes.</p>
+          {n.topBlends.length > 0 && (
+            <>
+              <h3 className="ov-sub">Best-scoring blends</h3>
+              <Scores bars={n.topBlends} />
+            </>
+          )}
+          <p className="muted small">Averages need at least {MIN_NOTES} scored notes.</p>
         </section>
       </div>
     </>

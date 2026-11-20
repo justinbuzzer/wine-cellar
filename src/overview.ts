@@ -145,7 +145,10 @@ export interface NoteStats {
   average: number | null;
   /** Highest average score, with at least `minNotes` notes. */
   topRegions: Bar[];
-  topGrapes: Bar[];
+  /** Single-grape wines, by grape. */
+  topSingles: Bar[];
+  /** Blends, by what the varietal column says (e.g. "Cabernet Sauvignon, Merlot"). */
+  topBlends: Bar[];
 }
 
 function averages(ts: Tasting[], keyOf: (t: Tasting) => string | null, minNotes: number, n: number): Bar[] {
@@ -162,7 +165,22 @@ function averages(ts: Tasting[], keyOf: (t: Tasting) => string | null, minNotes:
     .slice(0, n);
 }
 
-export function noteStats(tastings: Tasting[], today: string, minNotes = 3): NoteStats {
+/**
+ * Whether a note is for a blend. The Blend column decides when it says so
+ * ("Blend" vs "Single…"/"Mono…"); otherwise a varietal naming several grapes
+ * ("Cabernet Sauvignon, Merlot", "Grenache/Syrah", "GSM", "Red blend") counts.
+ */
+export function isBlend(t: Pick<Tasting, "blend" | "varietal">): boolean {
+  const b = (t.blend ?? "").trim();
+  if (/single|mono|varietal/i.test(b)) return false;
+  if (/blend|cuv[eé]e|assemblage/i.test(b)) return true;
+  const v = (t.varietal ?? "").trim();
+  return /[,/&+]|\band\b|\bblend\b|^gsm$|meritage/i.test(v);
+}
+
+export const MIN_NOTES = 10;
+
+export function noteStats(tastings: Tasting[], today: string, minNotes = MIN_NOTES): NoteStats {
   const scored = tastings.filter((t) => t.score !== null && Number.isFinite(t.score));
   const year = Number(today.slice(0, 4));
   return {
@@ -170,6 +188,7 @@ export function noteStats(tastings: Tasting[], today: string, minNotes = 3): Not
     thisYear: tastings.filter((t) => t.yearTasted === year || (t.dateTasted ?? "").startsWith(String(year))).length,
     average: scored.length ? Math.round((scored.reduce((s, t) => s + t.score!, 0) / scored.length) * 10) / 10 : null,
     topRegions: averages(tastings, (t) => (t.region ? (t.country ? `${t.region}, ${t.country}` : t.region) : null), minNotes, 5),
-    topGrapes: averages(tastings, (t) => t.varietal, minNotes, 5),
+    topSingles: averages(tastings, (t) => (isBlend(t) ? null : t.varietal), minNotes, 5),
+    topBlends: averages(tastings, (t) => (isBlend(t) ? t.varietal : null), minNotes, 5),
   };
 }
