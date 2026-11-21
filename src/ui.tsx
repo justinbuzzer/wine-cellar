@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type MouseEvent, type PointerEvent, type ReactNode } from "react";
 import { savedScroll } from "./router";
 import { useTheme } from "./theme";
 
@@ -326,3 +326,64 @@ export function TypeDot({ type }: { type: string | null }) {
 export function bottles(n: number): string {
   return `${n} bottle${n === 1 ? "" : "s"}`;
 }
+
+// ---- Press and hold ----------------------------------------------------------
+
+const HOLD_MS = 500;
+/** Finger or mouse may wander this far (px) and still count as holding still. */
+const HOLD_SLOP = 10;
+
+/**
+ * Press and hold: calls `onHold` after HOLD_MS without moving, and swallows the
+ * click that follows so the row doesn't also open. Scrolling cancels it.
+ */
+export function useLongPress() {
+  const timer = useRef<number | null>(null);
+  const start = useRef<{ x: number; y: number } | null>(null);
+  const fired = useRef(false);
+  const cancel = () => {
+    if (timer.current !== null) window.clearTimeout(timer.current);
+    timer.current = null;
+    start.current = null;
+  };
+  return {
+    /**
+     * The click ending a long press can land on whatever replaced the row
+     * (e.g. its tick box); call this from that element's click to ignore it.
+     */
+    swallow: (e: MouseEvent<HTMLElement>) => {
+      if (!fired.current) return;
+      fired.current = false;
+      e.preventDefault();
+      e.stopPropagation();
+    },
+    bind: (onHold: () => void) => ({
+      onPointerDown: (e: PointerEvent<HTMLElement>) => {
+        if (e.button !== 0) return;
+        fired.current = false;
+        start.current = { x: e.clientX, y: e.clientY };
+        timer.current = window.setTimeout(() => {
+          fired.current = true;
+          timer.current = null;
+          navigator.vibrate?.(15);
+          onHold();
+        }, HOLD_MS);
+      },
+      onPointerMove: (e: PointerEvent<HTMLElement>) => {
+        if (start.current && Math.hypot(e.clientX - start.current.x, e.clientY - start.current.y) > HOLD_SLOP) cancel();
+      },
+      onPointerUp: cancel,
+      onPointerCancel: cancel,
+      onPointerLeave: cancel,
+      // A long press on a phone would otherwise open the link menu.
+      onContextMenu: (e: MouseEvent<HTMLElement>) => e.preventDefault(),
+      onClick: (e: MouseEvent<HTMLElement>) => {
+        if (fired.current) {
+          e.preventDefault();
+          fired.current = false;
+        }
+      },
+    }),
+  };
+}
+

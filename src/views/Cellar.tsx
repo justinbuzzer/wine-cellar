@@ -5,7 +5,8 @@ import { LOCATIONS, type Location } from "../locations";
 import { ProducerLogo } from "../logos";
 import { forgetScroll, go, href } from "../router";
 import { useWorkbook } from "../store";
-import { bottles, restoreListPosition, TypeDot } from "../ui";
+import { bottles, restoreListPosition, TypeDot, useLongPress } from "../ui";
+import { sellable } from "./SellForm";
 import { vintageBucket, vintageBuckets } from "../overview";
 import { spendOn } from "../spend";
 
@@ -137,6 +138,18 @@ export default function Cellar() {
   const totalValue = list.reduce((s, w) => s + (w.price ?? 0) * Math.max(0, w.qty), 0);
   const filtered = JSON.stringify({ ...f, sort: "" }) !== JSON.stringify({ ...DEFAULTS, sort: "" });
 
+  // Press and hold a wine to pick several to sell; unticking the last one ends it.
+  const hold = useLongPress();
+  const [picked, setPicked] = useState<Set<string> | null>(null);
+  const toggle = (id: string) =>
+    setPicked((p) => {
+      const s = new Set(p);
+      if (s.has(id)) s.delete(id);
+      else s.add(id);
+      return s.size ? s : null;
+    });
+  const pickedBottles = picked ? data.wines.filter((w) => picked.has(w.wineId ?? "")).reduce((s, w) => s + w.qty, 0) : 0;
+
   return (
     <>
       {!data.hasLocations && (
@@ -226,8 +239,13 @@ export default function Cellar() {
           {filtered && (
             <button className="link" onClick={() => update({ ...DEFAULTS, sort: f.sort })}>Clear filters</button>
           )}
-          <button className="small" onClick={() => go("add")}>+ Add wine</button>
-          <button className="primary small" onClick={() => go("purchase")}>+ Add purchase</button>
+          <button className="small" onClick={() => go("sell")}>💰 Sell</button>
+          <button className="small" onClick={() => go("add")} aria-label="Add wine" title="Add wine">
+            + 🍷
+          </button>
+          <button className="primary small" onClick={() => go("purchase")} aria-label="Add purchase" title="Add purchase">
+            + 🧾
+          </button>
         </span>
       </div>
 
@@ -249,35 +267,71 @@ export default function Cellar() {
         <p className="muted center-text">No wines match.</p>
       ) : (
         <div className="wine-grid">
-          {list.map((w) => (
-            <a
-              key={w.wineId ?? w.name}
-              className="wine-card"
-              href={href(`wine/${w.wineId}`)}
-              data-wine={w.wineId ?? undefined}
-              onClick={() => {
-                lastOpened = w.wineId;
-              }}
-            >
-              <ProducerLogo producer={w.producer} />
-              <div className="wc-body">
-                <div className="wc-top">
-                  <TypeDot type={w.type} />
-                  <span className="wc-producer">{w.producer}</span>
-                  <span className="wc-vintage">{w.vintage}</span>
+          {list.map((w) => {
+            const id = w.wineId ?? "";
+            const body = (
+              <>
+                <ProducerLogo producer={w.producer} />
+                <div className="wc-body">
+                  <div className="wc-top">
+                    <TypeDot type={w.type} />
+                    <span className="wc-producer">{w.producer}</span>
+                    <span className="wc-vintage">{w.vintage}</span>
+                  </div>
+                  <div className="wc-name">{shortName(w)}</div>
+                  <div className="wc-meta">{[w.type, w.region, w.location].filter(Boolean).join(" · ")}</div>
+                  <div className="wc-bottom">
+                    <span className={w.qty > 0 ? "wc-qty" : "wc-qty muted"}>{locationLine(w)}</span>
+                    <span className="wc-price">{formatPrice(w.price, config.currency)}</span>
+                  </div>
+                  {w.status === "NYA" && <span className="badge">Not yet arrived</span>}
                 </div>
-                <div className="wc-name">{shortName(w)}</div>
-                <div className="wc-meta">{[w.type, w.region, w.location].filter(Boolean).join(" · ")}</div>
-                <div className="wc-bottom">
-                  <span className={w.qty > 0 ? "wc-qty" : "wc-qty muted"}>{locationLine(w)}</span>
-                  <span className="wc-price">{formatPrice(w.price, config.currency)}</span>
-                </div>
-                {w.status === "NYA" && <span className="badge">Not yet arrived</span>}
-              </div>
-            </a>
-          ))}
+              </>
+            );
+            if (picked) {
+              const can = sellable(w);
+              return (
+                <label
+                  key={w.wineId ?? w.name}
+                  className={`wine-card pick-card${picked.has(id) ? " on" : ""}${can ? "" : " cant"}`}
+                  onClickCapture={hold.swallow}
+                  title={can ? undefined : "No bottles in stock to sell"}
+                >
+                  <input type="checkbox" checked={picked.has(id)} disabled={!can} onChange={() => toggle(id)} aria-label={`Sell ${w.producer ?? ""} ${shortName(w)}`} />
+                  {body}
+                </label>
+              );
+            }
+            return (
+              <a
+                key={w.wineId ?? w.name}
+                className="wine-card hold-card"
+                href={href(`wine/${w.wineId}`)}
+                data-wine={w.wineId ?? undefined}
+                onClick={() => {
+                  lastOpened = w.wineId;
+                }}
+                {...(sellable(w) ? hold.bind(() => setPicked(new Set([id]))) : {})}
+              >
+                {body}
+              </a>
+            );
+          })}
         </div>
       )}
+
+      {picked && (
+        <div className="select-bar">
+          <span>
+            <strong>{picked.size}</strong> wine{picked.size === 1 ? "" : "s"} · {bottles(pickedBottles)} in stock
+          </span>
+          <button type="button" className="link" onClick={() => setPicked(null)}>Cancel</button>
+          <button type="button" className="primary" onClick={() => go(`sell/${[...picked].join(",")}`)}>
+            💰 Sell {picked.size} wine{picked.size === 1 ? "" : "s"}
+          </button>
+        </div>
+      )}
+      {!picked && list.some(sellable) && <p className="muted small center-text">Press and hold a wine to pick several to sell.</p>}
     </>
   );
 }

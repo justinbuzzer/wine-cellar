@@ -11,6 +11,7 @@ import WineDetail from "./views/WineDetail";
 import WineForm from "./views/WineForm";
 import WineList from "./views/WineList";
 import PurchaseForm from "./views/PurchaseForm";
+import SellForm from "./views/SellForm";
 import NoteForm from "./views/NoteForm";
 import NoteView from "./views/NoteView";
 import Notes from "./views/Notes";
@@ -65,7 +66,7 @@ const TABS = [
 function Shell({ account, tabs, children }: { account?: AccountInfo; tabs?: boolean; children: ReactNode }) {
   const route = useRoute();
   const section =
-    route[0] === "wine" || route[0] === "add" || route[0] === "edit" || route[0] === "purchase" || !route[0]
+    route[0] === "wine" || route[0] === "add" || route[0] === "edit" || route[0] === "purchase" || route[0] === "sell" || !route[0]
       ? "cellar"
       : route[0] === "note"
         ? "notes"
@@ -153,6 +154,8 @@ function Routes() {
       return <WineForm key="add" />;
     case "purchase":
       return <PurchaseForm />;
+    case "sell":
+      return <SellForm key={arg ?? "sell"} preselect={arg} />;
     case "edit":
       return <WineForm key={`edit-${arg}`} id={arg} />;
     case "list":

@@ -166,6 +166,17 @@ button.small { padding: 6px 12px; }
   padding: 12px 14px; color: inherit; text-decoration: none;
 }
 .wine-card:hover { border-color: var(--accent); }
+.hold-card { -webkit-touch-callout: none; user-select: none; -webkit-user-select: none; }
+.pick-card { display: flex; gap: 10px; align-items: flex-start; cursor: pointer; position: relative; }
+.pick-card > input { width: 20px; height: 20px; margin: 2px 0 0; flex: none; }
+.pick-card.on { border-color: var(--gold); background: var(--badge-bg); }
+.pick-card.cant { opacity: 0.45; cursor: default; }
+.select-bar {
+  position: sticky; bottom: 0; z-index: 4; display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: center;
+  background: var(--bg); border-top: 1px solid var(--gold); padding: 12px 64px 12px 0; margin-top: 10px;
+}
+.select-bar > span { flex: 1; min-width: 140px; }
+.line-total { margin: 8px 0 0; }.sell-picker { margin-bottom: 12px; }
 .wc-top { display: flex; align-items: center; gap: 8px; }
 .wc-producer { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); flex: 1; }
 .wc-vintage { font-weight: 700; }
