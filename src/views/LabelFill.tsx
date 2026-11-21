@@ -1,6 +1,17 @@
 import { useRef, useState, type ReactNode } from "react";
 import { shortName, type Tasting, type Wine } from "../data";
-import { LabelReaderError, matchLabel, readLabel, shrinkPhoto, type LabelField, type LabelMatch, type LabelResult } from "../label";
+import {
+  bottleTitle,
+  labelFields,
+  labelHints,
+  LabelReaderError,
+  matchLabel,
+  readBottles,
+  shrinkPhoto,
+  type LabelField,
+  type LabelMatch,
+  type LabelResult,
+} from "../label";
 import { useWorkbook } from "../store";
 import { TypeDot } from "../ui";
 
@@ -16,19 +27,30 @@ export interface LabelApply {
   unsure: string[];
 }
 
+type Photo = { key: string; preview: string; mediaType: string; data: string };
+
 /**
  * "Fill from label": pick or take photos, read them, then either use a matching
- * wine you already have or fill the wine details from the label.
+ * wine you already have or fill the wine details from the label. A line-up photo
+ * lists its bottles left to right: choose which one this note is (or, with
+ * `onDraftEach`, start a draft for each). With `onBottles`, every bottle found is
+ * handed over as is (used to reveal blind drafts).
  * The photos only live in this component's memory and are dropped once used.
  */
 export default function LabelFill({
   onApply,
   onPick,
+  onDraftEach,
+  onBottles,
   compact,
   children,
 }: {
-  onApply: (a: LabelApply) => void;
-  onPick: (w: Wine | Tasting) => void;
+  onApply?: (a: LabelApply) => void;
+  onPick?: (w: Wine | Tasting) => void;
+  /** Offered when a line-up photo is read on a new note: one draft per bottle. */
+  onDraftEach?: (bottles: LabelResult[]) => void;
+  /** Line-up mode: all bottles go here instead of filling one note. */
+  onBottles?: (bottles: LabelResult[]) => void;
   /** A smaller version, shown once a wine is already filled in. */
   compact?: boolean;
   /** Extra options shown with the buttons (e.g. replace or keep the wine details). */
@@ -37,9 +59,10 @@ export default function LabelFill({
   const { data } = useWorkbook();
   const input = useRef<HTMLInputElement>(null);
   const camera = useRef<HTMLInputElement>(null);
-  const [photos, setPhotos] = useState<{ key: string; preview: string; mediaType: string; data: string }[]>([]);
+  const [photos, setPhotos] = useState<Photo[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [several, setSeveral] = useState<LabelResult[] | null>(null);
   const [found, setFound] = useState<{ result: LabelResult; matches: LabelMatch[] } | null>(null);
 
   async function addFiles(files: FileList | null) {
@@ -50,7 +73,7 @@ export default function LabelFill({
     try {
       const shrunk = await Promise.all(picked.map(shrinkPhoto));
       setPhotos((p) => [...p, ...shrunk.map((s, i) => ({ key: `${Date.now()}-${i}`, ...s }))]);
-      if (files.length > room) setError(`Up to ${MAX_PHOTOS} photos: front and back labels are usually enough.`);
+      if (files.length > room) setError(`Up to ${MAX_PHOTOS} photos: a line-up shot plus a close-up or two is usually enough.`);
     } catch (e) {
       setError(e instanceof Error ? e.message : "That photo couldn't be opened.");
     }
@@ -59,6 +82,7 @@ export default function LabelFill({
   function reset() {
     setPhotos([]);
     setFound(null);
+    setSeveral(null);
     setError(null);
   }
 
@@ -66,24 +90,21 @@ export default function LabelFill({
     setBusy(true);
     setError(null);
     try {
-      const u = (xs: (string | null)[]) => [...new Set(xs.filter((x): x is string => !!x))];
-      const all = [...data.wines, ...data.tastings];
-      const result = await readLabel(
+      const bottles = await readBottles(
         photos.map(({ mediaType, data }) => ({ mediaType, data })),
-        {
-          types: data.lists["List_Type"] ?? [],
-          blends: data.lists["List_Blend"] ?? [],
-          countries: u(all.map((w) => w.country)),
-          regions: u(all.map((w) => w.region)),
-        },
+        labelHints(data),
       );
-      if (!result.readable || (!result.producer && !result.name)) {
+      if (!bottles.length || (bottles.length === 1 && !bottles[0].producer && !bottles[0].name)) {
         setError("No wine label could be read in these photos. Try a closer, straighter shot in good light.");
         return;
       }
-      const matches = matchLabel(result, data.wines, data.tastings);
-      if (matches.length) setFound({ result, matches });
-      else applyLabel(result);
+      if (onBottles) {
+        onBottles(bottles);
+        reset();
+        return;
+      }
+      if (bottles.length > 1) setSeveral(bottles);
+      else choose(bottles[0]);
     } catch (e) {
       const msg = e instanceof Error ? e.message : "The label reader failed. Try again.";
       setError(e instanceof LabelReaderError && e.userId ? `${msg} (Account ID for setup: ${e.userId})` : msg);
@@ -92,59 +113,22 @@ export default function LabelFill({
     }
   }
 
+  /** One bottle chosen: offer a wine you already have, else fill from the label. */
+  function choose(r: LabelResult) {
+    setSeveral(null);
+    const matches = matchLabel(r, data.wines, data.tastings);
+    if (matches.length) setFound({ result: r, matches });
+    else applyLabel(r);
+  }
+
   function applyLabel(r: LabelResult) {
-    const pick = (list: string[] | undefined, v: string) => (list ?? []).find((x) => x.toLowerCase() === v.toLowerCase()) ?? "";
-    const fields: Partial<Record<LabelField, string>> = {
-      producer: r.producer,
-      // A wine needs a name: fall back to the appellation, then the producer.
-      name: r.name || r.location || r.producer,
-      vintage: /^(\d{4}|nv)$/i.test(r.vintage) ? (/^nv$/i.test(r.vintage) ? "NV" : r.vintage) : "",
-      type: pick(data.lists["List_Type"], r.type),
-      country: r.country,
-      region: r.region,
-      location: r.location,
-      varietal: r.varietal,
-      blend: pick(data.lists["List_Blend"], r.blend),
-      alcohol: Number(r.alcohol) > 3 && Number(r.alcohol) < 25 ? String(Number(r.alcohol)) : "",
-    };
-    const kept = Object.fromEntries(Object.entries(fields).filter(([, v]) => v)) as Partial<Record<LabelField, string>>;
-    onApply({ fields: kept, unsure: r.unsure.filter((k) => kept[k]).map((k) => FIELD_NAMES[k]) });
+    const { fields, unsure } = labelFields(r, data.lists);
+    onApply?.({ fields, unsure: unsure.map((k) => FIELD_NAMES[k]) });
     reset();
   }
 
-  // ---- a match was found: offer it first ----
-  if (found) {
-    return (
-      <div className="label-fill">
-        <div className="notice label-match">
-          {found.matches.some((m) => m.exact) ? "This is a wine you already have:" : "This looks like a wine you already have:"}
-        </div>
-        <div className="choice-list">
-          {found.matches.map((m) => (
-            <button key={m.key} type="button" className="choice pick" onClick={() => { onPick(m.wine); reset(); }}>
-              <span>
-                <TypeDot type={m.wine.type ?? null} /> <strong>{m.wine.producer}</strong> {shortName({ producer: m.wine.producer ?? null, name: m.wine.name ?? null })}{" "}
-                <span className="muted">{m.wine.vintage}</span>
-              </span>
-              <span className={m.kind === "cellar" ? "pick-detail cellar" : "pick-detail"}>
-                {m.kind === "cellar"
-                  ? `In cellar ${(m.wine as Wine).wineId} · ${(m.wine as Wine).qty > 0 ? `${(m.wine as Wine).qty} bottle${(m.wine as Wine).qty === 1 ? "" : "s"}` : "finished"}`
-                  : "Tasted before"}{" "}
-                · use this wine
-              </span>
-            </button>
-          ))}
-        </div>
-        <button type="button" className="link" onClick={() => applyLabel(found.result)}>
-          No, use the label as a new wine: {[found.result.producer, found.result.name, found.result.vintage].filter(Boolean).join(" ")}
-        </button>
-        {children}
-      </div>
-    );
-  }
-
-  return (
-    <div className="label-fill">
+  const pickers = (
+    <>
       {/* Two pickers: some phones only offer the gallery unless the camera is asked for directly. */}
       <input
         ref={camera}
@@ -168,11 +152,83 @@ export default function LabelFill({
           e.target.value = ""; // the same photo can be chosen again
         }}
       />
-      {photos.length === 0 && compact ? (
+    </>
+  );
+
+  // ---- a line-up photo: which bottle is this note? ----
+  if (several) {
+    return (
+      <div className="label-fill">
+        <div className="notice label-match">
+          This photo shows {several.length} bottles (left to right). Which one is this note?
+        </div>
+        <div className="choice-list">
+          {several.map((b, i) => (
+            <button key={i} type="button" className="choice pick" onClick={() => choose(b)}>
+              <span>
+                <span className="bottle-pos">{i + 1}</span> <TypeDot type={b.type || null} /> {bottleTitle(b)}
+              </span>
+            </button>
+          ))}
+        </div>
+        <div className="actions">
+          {onDraftEach && (
+            <button
+              type="button"
+              onClick={() => {
+                onDraftEach(several);
+                reset();
+              }}
+            >
+              Start a draft for each of the {several.length} bottles
+            </button>
+          )}
+          <button type="button" className="link" onClick={reset}>Cancel</button>
+        </div>
+        {compact && children}
+      </div>
+    );
+  }
+
+  // ---- a match was found: offer it first ----
+  if (found) {
+    return (
+      <div className="label-fill">
+        <div className="notice label-match">
+          {found.matches.some((m) => m.exact) ? "This is a wine you already have:" : "This looks like a wine you already have:"}
+        </div>
+        <div className="choice-list">
+          {found.matches.map((m) => (
+            <button key={m.key} type="button" className="choice pick" onClick={() => { onPick?.(m.wine); reset(); }}>
+              <span>
+                <TypeDot type={m.wine.type ?? null} /> <strong>{m.wine.producer}</strong> {shortName({ producer: m.wine.producer ?? null, name: m.wine.name ?? null })}{" "}
+                <span className="muted">{m.wine.vintage}</span>
+              </span>
+              <span className={m.kind === "cellar" ? "pick-detail cellar" : "pick-detail"}>
+                {m.kind === "cellar"
+                  ? `In cellar ${(m.wine as Wine).wineId} · ${(m.wine as Wine).qty > 0 ? `${(m.wine as Wine).qty} bottle${(m.wine as Wine).qty === 1 ? "" : "s"}` : "finished"}`
+                  : "Tasted before"}{" "}
+                · use this wine
+              </span>
+            </button>
+          ))}
+        </div>
+        <button type="button" className="link" onClick={() => applyLabel(found.result)}>
+          No, use the label as a new wine: {[found.result.producer, found.result.name, found.result.vintage].filter(Boolean).join(" ")}
+        </button>
+        {children}
+      </div>
+    );
+  }
+
+  return (
+    <div className="label-fill">
+      {pickers}
+      {photos.length === 0 && (compact || onBottles) ? (
         <div className="label-compact">
           <div className="actions">
-            <span className="muted small">Label to hand?</span>
-            <button type="button" onClick={() => camera.current?.click()}>📷 Take photo</button>
+            {!onBottles && <span className="muted small">Label to hand?</span>}
+            <button type="button" className={onBottles ? "primary" : undefined} onClick={() => camera.current?.click()}>📷 Take photo</button>
             <button type="button" onClick={() => input.current?.click()}>🖼️ Choose photos</button>
           </div>
           {children}
@@ -188,7 +244,7 @@ export default function LabelFill({
               🖼️ Choose photos
             </button>
           </div>
-          <p className="muted small">Add the back label too: it often has the alcohol and grapes.</p>
+          <p className="muted small">One bottle or a line-up. For one bottle, add the back label too: it often has the alcohol and grapes.</p>
         </>
       ) : (
         <>
@@ -206,7 +262,7 @@ export default function LabelFill({
           </div>
           <div className="actions">
             <button type="button" className="primary" disabled={busy} onClick={() => void read()}>
-              {busy ? "Reading the label…" : "Read label"}
+              {busy ? "Reading the labels…" : onBottles ? "Read line-up" : "Read label"}
             </button>
             {photos.length < MAX_PHOTOS && !busy && (
               <>
@@ -217,7 +273,7 @@ export default function LabelFill({
             {!busy && <button type="button" className="link" onClick={reset}>Cancel</button>}
           </div>
           {compact && children}
-          <p className="muted small">The photos are sent once to read the label, then thrown away. Nothing is saved.</p>
+          <p className="muted small">The photos are sent once to read the labels, then thrown away. Nothing is saved.</p>
         </>
       )}
       {error && <p className="warn">{error}</p>}

@@ -358,6 +358,15 @@ mark { background: var(--mark); color: inherit; border-radius: 2px; padding: 0 1
 .drafts-list { padding-bottom: 4px; }
 .draft-badge { display: inline-block; margin-left: 8px; padding: 1px 8px; border-radius: 6px; font-size: 0.75rem; vertical-align: middle; background: var(--badge-bg); border: 1px solid var(--gold); }
 .draft-notice { border: 1px solid var(--gold); }
+.drafts-actions { border-top: 1px solid var(--border); padding: 10px 0 8px; }
+.reveal { border-top: 1px solid var(--border); padding: 10px 0; display: grid; gap: 8px; }
+.reveal .label-fill { margin-top: 0; }
+.reveal-pairs { display: grid; gap: 0; }
+.reveal-row { display: grid; grid-template-columns: minmax(70px, 30%) 14px minmax(0, 1fr); gap: 8px; align-items: center; border-top: 1px solid var(--border); padding: 8px 0; }
+.reveal-row select { width: 100%; }
+.reveal-done { margin: 0; padding-left: 18px; display: grid; gap: 4px; }
+.warn.small, .small.warn { font-size: 0.85rem; margin: 2px 0 0; }
+.bottle-pos { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; border: 1px solid var(--gold); font-size: 0.75rem; }
 .label-buttons .label-button { flex: 1 1 0; width: auto; }
 .label-thumbs { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 10px; }
 .label-thumbs figure { position: relative; margin: 0; }

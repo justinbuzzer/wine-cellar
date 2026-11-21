@@ -46,13 +46,29 @@ export class LabelReaderError extends Error {
   }
 }
 
-export async function readLabel(images: { mediaType: string; data: string }[], hints: Hints): Promise<LabelResult> {
+/** The app's own lists, sent with every read so answers use the workbook's names. */
+export function labelHints(data: { wines: Wine[]; tastings: Tasting[]; lists: Record<string, string[]> }): Hints {
+  const u = (xs: (string | null)[]) => [...new Set(xs.filter((x): x is string => !!x))];
+  const all = [...data.wines, ...data.tastings];
+  return {
+    types: data.lists["List_Type"] ?? [],
+    blends: data.lists["List_Blend"] ?? [],
+    countries: u(all.map((w) => w.country)),
+    regions: u(all.map((w) => w.region)),
+  };
+}
+
+/**
+ * Every bottle in the photos, left to right as they stand (a single bottle, or
+ * its front and back labels, gives a list of one).
+ */
+export async function readBottles(images: { mediaType: string; data: string }[], hints: Hints): Promise<LabelResult[]> {
   if (!config.labelReaderUrl) throw new LabelReaderError("The label reader isn't set up yet.");
   if (navigator.onLine === false) throw new LabelReaderError("You're offline. Reading a label needs a connection.");
   const token = await getToken();
   let res: Response;
   try {
-    res = await fetch(`${config.labelReaderUrl}/label`, {
+    res = await fetch(`${config.labelReaderUrl}/bottles`, {
       method: "POST",
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
       body: JSON.stringify({ images, ...hints }),
@@ -60,9 +76,39 @@ export async function readLabel(images: { mediaType: string; data: string }[], h
   } catch {
     throw new LabelReaderError("Couldn't reach the label reader. Check your connection and try again.");
   }
-  const body = (await res.json().catch(() => ({}))) as { error?: string; userId?: string; fields?: LabelResult };
-  if (!res.ok || !body.fields) throw new LabelReaderError(body.error ?? `The label reader failed (${res.status}).`, body.userId);
-  return body.fields;
+  const body = (await res.json().catch(() => ({}))) as { error?: string; userId?: string; bottles?: Omit<LabelResult, "readable">[]; readable?: boolean };
+  if (!res.ok || !Array.isArray(body.bottles)) throw new LabelReaderError(body.error ?? `The label reader failed (${res.status}).`, body.userId);
+  if (body.readable === false) return [];
+  return body.bottles.map((b) => ({ ...b, readable: true }));
+}
+
+/** A one-line name for a bottle the reader found, e.g. "Torbreck Descendant 2018". */
+export function bottleTitle(r: LabelResult): string {
+  const name = r.name && r.producer && norm(r.name).startsWith(norm(r.producer)) ? r.name : [r.producer, r.name].filter(Boolean).join(" ");
+  return [name || r.location || (r.type ? `${r.type} (label unreadable)` : "Label unreadable"), r.vintage].filter(Boolean).join(" ");
+}
+
+/**
+ * The reader's answer as note fields: type and blend snapped to the workbook's
+ * lists, vintage and alcohol checked. Empty values are left out.
+ */
+export function labelFields(r: LabelResult, lists: Record<string, string[]>): { fields: Partial<Record<LabelField, string>>; unsure: LabelField[] } {
+  const pick = (list: string[] | undefined, v: string) => (list ?? []).find((x) => x.toLowerCase() === v.toLowerCase()) ?? "";
+  const fields: Partial<Record<LabelField, string>> = {
+    producer: r.producer,
+    // A wine needs a name: fall back to the appellation, then the producer.
+    name: r.name || r.location || r.producer,
+    vintage: /^(\d{4}|nv)$/i.test(r.vintage) ? (/^nv$/i.test(r.vintage) ? "NV" : r.vintage) : "",
+    type: pick(lists["List_Type"], r.type),
+    country: r.country,
+    region: r.region,
+    location: r.location,
+    varietal: r.varietal,
+    blend: pick(lists["List_Blend"], r.blend),
+    alcohol: Number(r.alcohol) > 3 && Number(r.alcohol) < 25 ? String(Number(r.alcohol)) : "",
+  };
+  const kept = Object.fromEntries(Object.entries(fields).filter(([, v]) => v)) as Partial<Record<LabelField, string>>;
+  return { fields: kept, unsure: r.unsure.filter((k) => kept[k]) };
 }
 
 // ---- matching to wines you already have ----------------------------------------------

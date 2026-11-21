@@ -4,6 +4,8 @@ import { EMPTY_QUERY, fold, highlightParts, searchNotes, tokens, type GrapeKind,
 import { forgetScroll, go, href } from "../router";
 import { useWorkbook } from "../store";
 import { formatSaved, newestDrafts, type Draft } from "../drafts";
+import { labelReaderOn } from "../label";
+import Reveal from "./Reveal";
 import { restoreListPosition, TypeDot } from "../ui";
 
 // Kept outside the component so the search survives opening a note and coming back.
@@ -162,6 +164,7 @@ export default function Notes() {
 /** Unfinished notes: folded away until you open the list. */
 function DraftsBox({ drafts }: { drafts: Draft[] }) {
   const [open, setOpen] = useState(false);
+  const [revealing, setRevealing] = useState(false);
   if (!drafts.length) return null;
   return (
     <section className={open ? "card drafts-box open" : "card drafts-box"}>
@@ -194,6 +197,16 @@ function DraftsBox({ drafts }: { drafts: Draft[] }) {
               </a>
             );
           })}
+          {labelReaderOn() &&
+            (revealing ? (
+              <Reveal onClose={() => setRevealing(false)} />
+            ) : (
+              <div className="actions drafts-actions">
+                <button type="button" className="primary" onClick={() => setRevealing(true)}>
+                  📷 Reveal with line-up photo
+                </button>
+              </div>
+            ))}
         </div>
       )}
     </section>
