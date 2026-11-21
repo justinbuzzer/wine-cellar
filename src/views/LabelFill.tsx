@@ -24,6 +24,7 @@ export interface LabelApply {
 export default function LabelFill({ onApply, onPick }: { onApply: (a: LabelApply) => void; onPick: (w: Wine | Tasting) => void }) {
   const { data } = useWorkbook();
   const input = useRef<HTMLInputElement>(null);
+  const camera = useRef<HTMLInputElement>(null);
   const [photos, setPhotos] = useState<{ key: string; preview: string; mediaType: string; data: string }[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -131,6 +132,18 @@ export default function LabelFill({ onApply, onPick }: { onApply: (a: LabelApply
 
   return (
     <div className="label-fill">
+      {/* Two pickers: some phones only offer the gallery unless the camera is asked for directly. */}
+      <input
+        ref={camera}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        hidden
+        onChange={(e) => {
+          void addFiles(e.target.files);
+          e.target.value = "";
+        }}
+      />
       <input
         ref={input}
         type="file"
@@ -144,11 +157,16 @@ export default function LabelFill({ onApply, onPick }: { onApply: (a: LabelApply
       />
       {photos.length === 0 ? (
         <>
-          <p className="or">or</p>
-          <button type="button" className="primary label-button" onClick={() => input.current?.click()}>
-            📷 Fill from label
-          </button>
-          <p className="muted small">Take a photo or choose one from your photos. Add the back label too: it often has the alcohol and grapes.</p>
+          <p className="or">or fill from the label</p>
+          <div className="actions label-buttons">
+            <button type="button" className="primary label-button" onClick={() => camera.current?.click()}>
+              📷 Take photo
+            </button>
+            <button type="button" className="label-button" onClick={() => input.current?.click()}>
+              🖼️ Choose photos
+            </button>
+          </div>
+          <p className="muted small">Add the back label too: it often has the alcohol and grapes.</p>
         </>
       ) : (
         <>
@@ -169,7 +187,10 @@ export default function LabelFill({ onApply, onPick }: { onApply: (a: LabelApply
               {busy ? "Reading the label…" : "Read label"}
             </button>
             {photos.length < MAX_PHOTOS && !busy && (
-              <button type="button" onClick={() => input.current?.click()}>+ Add another photo</button>
+              <>
+                <button type="button" onClick={() => camera.current?.click()}>+ Take another</button>
+                <button type="button" onClick={() => input.current?.click()}>+ Choose another</button>
+              </>
             )}
             {!busy && <button type="button" className="link" onClick={reset}>Cancel</button>}
           </div>

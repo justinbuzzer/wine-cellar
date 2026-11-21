@@ -348,6 +348,8 @@ mark { background: var(--mark); color: inherit; border-radius: 2px; padding: 0 1
 .label-fill { margin-top: 4px; }
 .label-fill .or { text-align: center; color: var(--muted); font-size: 0.85rem; margin: 10px 0; }
 .label-button { width: 100%; }
+.label-fill .label-buttons { flex-wrap: nowrap; }
+.label-buttons .label-button { flex: 1 1 0; width: auto; }
 .label-thumbs { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 10px; }
 .label-thumbs figure { position: relative; margin: 0; }
 .label-thumbs img { width: 96px; height: 128px; object-fit: cover; border-radius: 8px; border: 1px solid var(--border); display: block; }
