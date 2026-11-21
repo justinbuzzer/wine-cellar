@@ -21,6 +21,8 @@ import {
 import { go, href } from "../router";
 import { describeError, useWorkbook } from "../store";
 import { ChipGroup, TagInput, TypeDot, useToast } from "../ui";
+import { labelReaderOn } from "../label";
+import LabelFill, { type LabelApply } from "./LabelFill";
 
 // ---- form state ----------------------------------------------------------------
 
@@ -205,6 +207,35 @@ export default function NoteForm({ editId, wineId, fromId }: { editId?: string; 
   const set = <K extends keyof NoteState>(k: K, v: NoteState[K]) => setF((p) => ({ ...p, [k]: v }));
   const text = (k: keyof NoteState) => (e: { target: { value: string } }) => set(k, e.target.value as never);
 
+  // Fields filled from a label photo stay highlighted until you change them.
+  const [fromLabel, setFromLabel] = useState<{ filled: Set<string>; unsure: string[] } | null>(null);
+  const unmark = (k: string) =>
+    setFromLabel((s) => {
+      if (!s?.filled.has(k)) return s;
+      const filled = new Set(s.filled);
+      filled.delete(k);
+      return filled.size ? { ...s, filled } : null;
+    });
+  const setW = <K extends keyof NoteState>(k: K, v: NoteState[K]) => {
+    set(k, v);
+    unmark(k);
+  };
+  const textW = (k: keyof NoteState) => (e: { target: { value: string } }) => {
+    text(k)(e);
+    unmark(k);
+  };
+  const pickWine = (w: Partial<WineFields>) => {
+    setFromLabel(null);
+    setF((p) => ({ ...p, ...wineFields(w) }));
+    // A brand-new wine needs at least its type filled in.
+    if (!w.type) setShowWineDetails(true);
+  };
+  const applyLabel = ({ fields, unsure }: LabelApply) => {
+    setF((p) => ({ ...p, ...wineFields({}), ...fields }));
+    setFromLabel({ filled: new Set(Object.keys(fields)), unsure });
+    setShowWineDetails(true);
+  };
+
   // Keep an on-device draft of new notes so nothing is lost.
   useEffect(() => {
     if (!isEdit && (f.name || f.noseTags.length || f.score !== null)) saveDraft(f);
@@ -292,13 +323,10 @@ export default function NoteForm({ editId, wineId, fromId }: { editId?: string; 
         {/* ---- Wine ---- */}
         <Section title="Wine">
           {!hasWine && !isEdit ? (
-            <WinePicker
-              onPick={(w) => {
-                setF((p) => ({ ...p, ...wineFields(w) }));
-                // A brand-new wine needs at least its type filled in.
-                if (!w.type) setShowWineDetails(true);
-              }}
-            />
+            <>
+              <WinePicker onPick={pickWine} />
+              {labelReaderOn() && <LabelFill onApply={applyLabel} onPick={(w) => pickWine(w as Partial<WineFields>)} />}
+            </>
           ) : (
             <>
               <div className="picked-wine">
@@ -319,15 +347,28 @@ export default function NoteForm({ editId, wineId, fromId }: { editId?: string; 
                   {showWineDetails ? "Hide wine details" : "Edit wine details"}
                 </button>
                 {!isEdit && (
-                  <button type="button" className="link" onClick={() => setF((p) => ({ ...p, ...wineFields({}) }))}>
+                  <button
+                    type="button"
+                    className="link"
+                    onClick={() => {
+                      setFromLabel(null);
+                      setF((p) => ({ ...p, ...wineFields({}) }));
+                    }}
+                  >
                     Choose a different wine
                   </button>
                 )}
               </div>
+              {fromLabel && (
+                <p className="notice label-note">
+                  Filled from the label: check the highlighted fields.
+                  {fromLabel.unsure.length > 0 && <> Least sure about: {fromLabel.unsure.join(", ")}.</>}
+                </p>
+              )}
             </>
           )}
           {(showWineDetails || (!hasWine && isEdit)) && (
-            <WineDetails f={f} text={text} set={set} data={data} />
+            <WineDetails f={f} text={textW} set={setW} data={data} filled={fromLabel?.filled} />
           )}
         </Section>
 
@@ -596,12 +637,15 @@ function WineDetails({
   text,
   set,
   data,
+  filled,
 }: {
+  filled?: Set<string>;
   f: NoteState;
   text: (k: keyof NoteState) => (e: { target: { value: string } }) => void;
   set: <K extends keyof NoteState>(k: K, v: NoteState[K]) => void;
   data: ReturnType<typeof useWorkbook>["data"];
 }) {
+  const hl = (k: keyof NoteState) => (filled?.has(k) ? "label-filled" : undefined);
   const u = (xs: (string | null)[]) => [...new Set(xs.filter((x): x is string => !!x))].sort((a, b) => a.localeCompare(b));
   const all = [...data.wines, ...data.tastings];
   const lists: Record<string, string[]> = {
@@ -614,35 +658,35 @@ function WineDetails({
   return (
     <div className="wine-details">
       <div className="row-2">
-        <Label text="Producer"><input value={f.producer} onChange={text("producer")} list="dl-n-producer" autoComplete="off" /></Label>
-        <Label text="Wine name *"><input value={f.name} onChange={text("name")} autoComplete="off" /></Label>
+        <Label text="Producer"><input className={hl("producer")} value={f.producer} onChange={text("producer")} list="dl-n-producer" autoComplete="off" /></Label>
+        <Label text="Wine name *"><input className={hl("name")} value={f.name} onChange={text("name")} autoComplete="off" /></Label>
       </div>
       <div className="row-2">
-        <Label text="Vintage"><input value={f.vintage} onChange={text("vintage")} placeholder="2019 or NV" /></Label>
+        <Label text="Vintage"><input className={hl("vintage")} value={f.vintage} onChange={text("vintage")} placeholder="2019 or NV" /></Label>
         <Label text="Type *">
-          <select value={f.type} onChange={(e) => set("type", e.target.value)}>
+          <select className={hl("type")} value={f.type} onChange={(e) => set("type", e.target.value)}>
             <option value="">Choose…</option>
             {(data.lists["List_Type"] ?? []).map((t) => <option key={t}>{t}</option>)}
           </select>
         </Label>
       </div>
       <div className="row-2">
-        <Label text="Country"><input value={f.country} onChange={text("country")} list="dl-n-country" autoComplete="off" /></Label>
-        <Label text="Region"><input value={f.region} onChange={text("region")} list="dl-n-region" autoComplete="off" /></Label>
+        <Label text="Country"><input className={hl("country")} value={f.country} onChange={text("country")} list="dl-n-country" autoComplete="off" /></Label>
+        <Label text="Region"><input className={hl("region")} value={f.region} onChange={text("region")} list="dl-n-region" autoComplete="off" /></Label>
       </div>
       <div className="row-2">
-        <Label text="Location / appellation"><input value={f.location} onChange={text("location")} list="dl-n-location" autoComplete="off" /></Label>
-        <Label text="Varietal"><input value={f.varietal} onChange={text("varietal")} list="dl-n-varietal" autoComplete="off" /></Label>
+        <Label text="Location / appellation"><input className={hl("location")} value={f.location} onChange={text("location")} list="dl-n-location" autoComplete="off" /></Label>
+        <Label text="Varietal"><input className={hl("varietal")} value={f.varietal} onChange={text("varietal")} list="dl-n-varietal" autoComplete="off" /></Label>
       </div>
       <div className="row-2">
         <Label text="Blend">
-          <select value={f.blend} onChange={(e) => set("blend", e.target.value)}>
+          <select className={hl("blend")} value={f.blend} onChange={(e) => set("blend", e.target.value)}>
             <option value="" />
             {(data.lists["List_Blend"] ?? []).map((b) => <option key={b}>{b}</option>)}
           </select>
         </Label>
         <div className="row-2">
-          <Label text="Alcohol %"><input value={f.alcohol} onChange={text("alcohol")} inputMode="decimal" placeholder="13.5" /></Label>
+          <Label text="Alcohol %"><input className={hl("alcohol")} value={f.alcohol} onChange={text("alcohol")} inputMode="decimal" placeholder="13.5" /></Label>
           <Label text={`Price (${config.currency === "SGD" ? "S$" : config.currency})`}><input value={f.price} onChange={text("price")} inputMode="decimal" /></Label>
         </div>
       </div>

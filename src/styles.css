@@ -345,6 +345,17 @@ mark { background: var(--mark); color: inherit; border-radius: 2px; padding: 0 1
 .add-line { width: 100%; padding: 12px; margin-bottom: 16px; border-style: dashed; font-weight: 600; }
 .purchase-bar { flex-wrap: wrap; }
 .purchase-summary { display: flex; flex-wrap: wrap; gap: 4px 12px; flex: 1 1 100%; font-size: 0.9rem; }
+.label-fill { margin-top: 4px; }
+.label-fill .or { text-align: center; color: var(--muted); font-size: 0.85rem; margin: 10px 0; }
+.label-button { width: 100%; }
+.label-thumbs { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 10px; }
+.label-thumbs figure { position: relative; margin: 0; }
+.label-thumbs img { width: 96px; height: 128px; object-fit: cover; border-radius: 8px; border: 1px solid var(--border); display: block; }
+.label-thumbs button { position: absolute; top: 2px; right: 4px; background: var(--surface); border-radius: 50%; width: 24px; height: 24px; padding: 0; }
+.label-fill .actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.label-match { margin: 4px 0 8px; }
+.label-note { margin: 10px 0 0; font-size: 0.9rem; }
+input.label-filled, select.label-filled { background: var(--badge-bg); border-color: var(--gold); }
 .purchase-done { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; flex: 1 1 100%; }
 
 .issue-list { margin: 8px 0 12px; padding-left: 18px; display: grid; gap: 6px; }

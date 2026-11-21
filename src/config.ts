@@ -62,4 +62,11 @@ export const config = {
   allowedAccountIds: [] as string[],
 
   currency: "SGD",
+
+  /**
+   * "Fill from label" on tasting notes: the Cloudflare Worker in /worker that holds
+   * the Claude API key. Empty = the button is hidden. Not a secret; it only answers
+   * your own Microsoft sign-in.
+   */
+  labelReaderUrl: "https://wine-label-reader.wine-label-reader.workers.dev" as string,
 } as const;

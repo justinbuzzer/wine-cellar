@@ -1,6 +1,9 @@
 node_modules/
 dist/
 .env*
+# Cloudflare Worker local state and secrets
+.wrangler/
+.dev.vars*
 *.log
 
 # Never commit wine data — it lives in OneDrive behind your sign-in.

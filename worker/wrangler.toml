@@ -1,0 +1,13 @@
+name = "wine-label-reader"
+main = "src/index.ts"
+compatibility_date = "2026-11-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Sites allowed to call the reader. Secrets (API key, allowed user IDs) are set
+# with `npx wrangler secret put ...` and never live in this file.
+[vars]
+ALLOWED_ORIGINS = "https://justinbuzzer.github.io,http://localhost:5173"
+
+# Don't log request bodies; there's nothing to keep.
+[observability]
+enabled = false
