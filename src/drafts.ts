@@ -88,6 +88,16 @@ export function deleteDraft(itemId: string, draftId: string): Promise<void> {
   return withSession(itemId, (wb) => removeLog(wb, SPEC, draftId));
 }
 
+/** Deletes several drafts in one go, calling `done` after each, so a failure part-way still reports what went. */
+export function deleteDrafts(itemId: string, draftIds: string[], done: (id: string) => void): Promise<void> {
+  return withSession(itemId, async (wb) => {
+    for (const id of draftIds) {
+      await removeLog(wb, SPEC, id);
+      done(id);
+    }
+  });
+}
+
 /** Newest first. */
 export function newestDrafts(xs: Draft[]): Draft[] {
   return [...xs].sort((a, b) => (b.saved ?? 0) - (a.saved ?? 0) || b.draftId.localeCompare(a.draftId));

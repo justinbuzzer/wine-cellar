@@ -1,12 +1,12 @@
-import { useLayoutEffect, useMemo, useState } from "react";
+import { useLayoutEffect, useMemo, useRef, useState, type MouseEvent, type PointerEvent } from "react";
 import { shortName, type Tasting } from "../data";
 import { EMPTY_QUERY, fold, highlightParts, searchNotes, tokens, type GrapeKind, type NoteQuery, type NoteSort } from "../notesearch";
 import { forgetScroll, go, href } from "../router";
-import { useWorkbook } from "../store";
-import { formatSaved, newestDrafts, type Draft } from "../drafts";
+import { describeError, useWorkbook } from "../store";
+import { deleteDrafts, formatSaved, newestDrafts, type Draft } from "../drafts";
 import { labelReaderOn } from "../label";
 import Reveal from "./Reveal";
-import { restoreListPosition, TypeDot } from "../ui";
+import { restoreListPosition, TypeDot, useToast } from "../ui";
 
 // Kept outside the component so the search survives opening a note and coming back.
 let saved: NoteQuery = EMPTY_QUERY;
@@ -161,30 +161,150 @@ export default function Notes() {
   );
 }
 
-/** Unfinished notes: folded away until you open the list. */
+const HOLD_MS = 500;
+/** Finger or mouse may wander this far (px) and still count as holding still. */
+const HOLD_SLOP = 10;
+
+/**
+ * Press and hold: calls `onHold` after HOLD_MS without moving, and swallows the
+ * click that follows so the row doesn't also open. Scrolling cancels it.
+ */
+function useLongPress() {
+  const timer = useRef<number | null>(null);
+  const start = useRef<{ x: number; y: number } | null>(null);
+  const fired = useRef(false);
+  const cancel = () => {
+    if (timer.current !== null) window.clearTimeout(timer.current);
+    timer.current = null;
+    start.current = null;
+  };
+  return {
+    /**
+     * The click ending a long press can land on whatever replaced the row
+     * (e.g. its tick box); call this from that element's click to ignore it.
+     */
+    swallow: (e: MouseEvent<HTMLElement>) => {
+      if (!fired.current) return;
+      fired.current = false;
+      e.preventDefault();
+      e.stopPropagation();
+    },
+    bind: (onHold: () => void) => ({
+      onPointerDown: (e: PointerEvent<HTMLElement>) => {
+        if (e.button !== 0) return;
+        fired.current = false;
+        start.current = { x: e.clientX, y: e.clientY };
+        timer.current = window.setTimeout(() => {
+          fired.current = true;
+          timer.current = null;
+          navigator.vibrate?.(15);
+          onHold();
+        }, HOLD_MS);
+      },
+      onPointerMove: (e: PointerEvent<HTMLElement>) => {
+        if (start.current && Math.hypot(e.clientX - start.current.x, e.clientY - start.current.y) > HOLD_SLOP) cancel();
+      },
+      onPointerUp: cancel,
+      onPointerCancel: cancel,
+      onPointerLeave: cancel,
+      // A long press on a phone would otherwise open the link menu.
+      onContextMenu: (e: MouseEvent<HTMLElement>) => e.preventDefault(),
+      onClick: (e: MouseEvent<HTMLElement>) => {
+        if (fired.current) {
+          e.preventDefault();
+          fired.current = false;
+        }
+      },
+    }),
+  };
+}
+
+/** Unfinished notes: folded away until you open the list. Press and hold a draft to select. */
 function DraftsBox({ drafts }: { drafts: Draft[] }) {
+  const { data, removeDraft } = useWorkbook();
+  const toast = useToast();
   const [open, setOpen] = useState(false);
   const [revealing, setRevealing] = useState(false);
+  /** Select mode: the ticked draft IDs (null = not selecting). */
+  const [picked, setPicked] = useState<Set<string> | null>(null);
+  const [busy, setBusy] = useState(false);
+  const hold = useLongPress();
   if (!drafts.length) return null;
+  const list = newestDrafts(drafts);
+  const selecting = picked !== null;
+  const ticked = list.filter((d) => picked?.has(d.draftId));
+  const toggle = (id: string) =>
+    setPicked((p) => {
+      const s = new Set(p);
+      if (s.has(id)) s.delete(id);
+      else s.add(id);
+      // Unticking the last one leaves Select mode.
+      return s.size ? s : null;
+    });
+
+  async function deletePicked() {
+    const n = ticked.length;
+    if (!n || !window.confirm(`Delete ${n} draft${n === 1 ? "" : "s"}? This can't be undone.`)) return;
+    setBusy(true);
+    let gone = 0;
+    try {
+      await deleteDrafts(
+        data.file.id,
+        ticked.map((d) => d.draftId),
+        (id) => {
+          gone++;
+          removeDraft(id);
+        },
+      );
+      toast({ text: `${n} draft${n === 1 ? "" : "s"} deleted.` });
+      setPicked(null);
+    } catch (e) {
+      toast({ text: `${describeError(e)}${gone ? ` (${gone} deleted before this.)` : ""}`, error: true });
+      setPicked((p) => {
+        const left = new Set([...(p ?? [])].filter((id) => drafts.some((d) => d.draftId === id)));
+        return left.size ? left : null;
+      });
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <section className={open ? "card drafts-box open" : "card drafts-box"}>
-      <button type="button" className="drafts-toggle" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
-        <span>
-          <strong>Drafts</strong> <span className="muted">({drafts.length})</span>
-        </span>
-        <span className="chev" aria-hidden="true">{open ? "▴" : "▾"}</span>
-      </button>
+      <div className="drafts-head">
+        <button type="button" className="drafts-toggle" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
+          <span>
+            {selecting ? (
+              <strong>{ticked.length} selected</strong>
+            ) : (
+              <>
+                <strong>Drafts</strong> <span className="muted">({drafts.length})</span>
+              </>
+            )}
+          </span>
+          {!selecting && <span className="chev" aria-hidden="true">{open ? "▴" : "▾"}</span>}
+        </button>
+        {open && selecting && (
+          <button
+            type="button"
+            className="link"
+            onClick={() => setPicked(ticked.length === list.length ? null : new Set(list.map((d) => d.draftId)))}
+          >
+            {ticked.length === list.length ? "Select none" : "Select all"}
+          </button>
+        )}
+      </div>
       {open && (
         <div className="drafts-list">
-          {newestDrafts(drafts).map((d) => {
+          {list.map((d) => {
             const n = d.note;
             const progress = [
               n.type,
               n.nose ? "nose done" : null,
               n.score !== null ? `score ${n.score}` : "no score yet",
             ].filter(Boolean).join(" · ");
-            return (
-              <a key={d.draftId} className="tasting-row note-link" href={href(`note/draft/${d.draftId}`)}>
+            const body = (
+              <>
                 <div>
                   <TypeDot type={n.type} /> {n.producer && <strong>{n.producer} </strong>}
                   {n.name ? shortName(n) : <span className="muted">No wine yet</span>} <span className="muted">{n.vintage}</span>
@@ -194,10 +314,42 @@ function DraftsBox({ drafts }: { drafts: Draft[] }) {
                   {progress}
                   {n.source ? ` · ${n.source}` : ""}
                 </div>
+              </>
+            );
+            return selecting ? (
+              <label
+                key={d.draftId}
+                className={picked.has(d.draftId) ? "tasting-row draft-pick on" : "tasting-row draft-pick"}
+                onClickCapture={hold.swallow}
+              >
+                <input type="checkbox" checked={picked.has(d.draftId)} disabled={busy} onChange={() => toggle(d.draftId)} />
+                <div>{body}</div>
+              </label>
+            ) : (
+              <a
+                key={d.draftId}
+                className="tasting-row note-link draft-row"
+                href={href(`note/draft/${d.draftId}`)}
+                {...hold.bind(() => {
+                  setRevealing(false);
+                  setPicked(new Set([d.draftId]));
+                })}
+              >
+                {body}
               </a>
             );
           })}
-          {labelReaderOn() &&
+          {selecting && (
+            <div className="actions drafts-actions">
+              <button type="button" className="danger" disabled={busy || !ticked.length} onClick={() => void deletePicked()}>
+                {busy ? "Deleting…" : `Delete ${ticked.length} draft${ticked.length === 1 ? "" : "s"}`}
+              </button>
+              <button type="button" className="link" disabled={busy} onClick={() => setPicked(null)}>
+                Done
+              </button>
+            </div>
+          )}
+          {!selecting && labelReaderOn() &&
             (revealing ? (
               <Reveal onClose={() => setRevealing(false)} />
             ) : (
@@ -207,6 +359,7 @@ function DraftsBox({ drafts }: { drafts: Draft[] }) {
                 </button>
               </div>
             ))}
+          {!selecting && !revealing && <p className="muted small drafts-hint">Press and hold a draft to select drafts to delete.</p>}
         </div>
       )}
     </section>
