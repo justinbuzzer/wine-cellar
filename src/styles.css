@@ -345,6 +345,7 @@ mark { background: var(--mark); color: inherit; border-radius: 2px; padding: 0 1
 .add-line { width: 100%; padding: 12px; margin-bottom: 16px; border-style: dashed; font-weight: 600; }
 .purchase-bar { flex-wrap: wrap; }
 .purchase-summary { display: flex; flex-wrap: wrap; gap: 4px 12px; flex: 1 1 100%; font-size: 0.9rem; }
+.purchase-done { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; flex: 1 1 100%; }
 
 .issue-list { margin: 8px 0 12px; padding-left: 18px; display: grid; gap: 6px; }
 .upgrade { border-color: var(--gold); }

@@ -64,6 +64,11 @@ function loadDraft(): { shared: Shared; lines: Line[] } | null {
     const raw = localStorage.getItem(DRAFT_KEY);
     if (!raw) return null;
     const d = JSON.parse(raw) as { shared: Shared; lines: Line[] };
+    // A purchase whose lines were all saved is finished; start a fresh one.
+    if (!d.lines?.length || d.lines.every((l) => l.state === "saved")) {
+      localStorage.removeItem(DRAFT_KEY);
+      return null;
+    }
     // A save interrupted by closing the app may or may not have reached Excel.
     d.lines = d.lines.map((l) =>
       l.state === "saving" ? { ...l, state: "error", message: "Saving was interrupted. Check this wine in the Cellar before retrying." } : l,
@@ -113,9 +118,12 @@ export default function PurchaseForm() {
   const [showErrors, setShowErrors] = useState(false);
 
   const hasContent = lines.some((l) => l.kind !== "pick") || !!shared.source;
+  const finished = lines.length > 0 && lines.every((l) => l.state === "saved");
   useEffect(() => {
-    if (hasContent) saveDraft({ shared, lines });
-  }, [shared, lines, hasContent]);
+    // Once every line is saved there's nothing left to restore, so don't write the draft back.
+    if (finished) saveDraft(null);
+    else if (hasContent) saveDraft({ shared, lines });
+  }, [shared, lines, hasContent, finished]);
 
   const setLine = (key: string, patch: Partial<Line> | ((l: Line) => Partial<Line>)) =>
     setLines((ls) => ls.map((l) => (l.key === key ? { ...l, ...(typeof patch === "function" ? patch(l) : patch) } : l)));
@@ -143,7 +151,7 @@ export default function PurchaseForm() {
             : null,
       })),
   );
-  const allSaved = lines.length > 0 && lines.every((l) => l.state === "saved");
+  const allSaved = finished;
 
   async function saveAll() {
     setShowErrors(true);
@@ -220,7 +228,7 @@ export default function PurchaseForm() {
 
   function discard() {
     saveDraft(null);
-    setShared(DEFAULT_SHARED);
+    setShared({ ...DEFAULT_SHARED, year: thisYear() });
     setLines([blankLine()]);
     setRestored(false);
     setShowErrors(false);
@@ -310,7 +318,10 @@ export default function PurchaseForm() {
           <span className="muted">{shared.where}{shared.nya ? " · not yet arrived" : ""}</span>
         </div>
         {allSaved ? (
-          <button className="primary" onClick={() => go("cellar")}>Done: back to Cellar</button>
+          <div className="purchase-done">
+            <button onClick={discard}>Add another purchase</button>
+            <button className="primary" onClick={() => { discard(); go("cellar"); }}>Done: back to Cellar</button>
+          </div>
         ) : (
           <button className="primary" disabled={busy || pending.length === 0} onClick={() => void saveAll()}>
             {busy ? "Saving…" : `Save ${pending.length} line${pending.length === 1 ? "" : "s"}`}
