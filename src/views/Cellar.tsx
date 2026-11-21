@@ -239,11 +239,11 @@ export default function Cellar() {
           {filtered && (
             <button className="link" onClick={() => update({ ...DEFAULTS, sort: f.sort })}>Clear filters</button>
           )}
-          <button className="small" onClick={() => go("sell")}>💰 Sell</button>
-          <button className="small" onClick={() => go("add")} aria-label="Add wine" title="Add wine">
+          <button className="primary small" onClick={() => go("sell")}>💰 Sell</button>
+          <button className="primary small" onClick={() => go("add")} aria-label="Add wine" title="Add wine">
             + 🍷
           </button>
-          <button className="small" onClick={() => go("purchase")} aria-label="Add purchase" title="Add purchase">
+          <button className="primary small" onClick={() => go("purchase")} aria-label="Add purchase" title="Add purchase">
             + 🧾
           </button>
         </span>
