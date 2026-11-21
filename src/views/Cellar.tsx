@@ -243,7 +243,7 @@ export default function Cellar() {
           <button className="small" onClick={() => go("add")} aria-label="Add wine" title="Add wine">
             + 🍷
           </button>
-          <button className="primary small" onClick={() => go("purchase")} aria-label="Add purchase" title="Add purchase">
+          <button className="small" onClick={() => go("purchase")} aria-label="Add purchase" title="Add purchase">
             + 🧾
           </button>
         </span>
