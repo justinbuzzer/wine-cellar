@@ -23,6 +23,7 @@ import { describeError, useWorkbook } from "../store";
 import { ChipGroup, TagInput, TypeDot, useToast } from "../ui";
 import { labelReaderOn } from "../label";
 import LabelFill, { type LabelApply } from "./LabelFill";
+import { addDraft, deleteDraft, formatSaved, updateDraft } from "../drafts";
 
 // ---- form state ----------------------------------------------------------------
 
@@ -156,35 +157,53 @@ function validate(f: NoteState): string[] {
   return errs;
 }
 
-const DRAFT_KEY = `wine-cellar.noteDraft.${import.meta.env.MODE}`;
+/** Only the format checks: a draft can be saved at any stage. */
+function validateDraft(f: NoteState): string[] {
+  return validate(f).filter((e) => !/^(Choose or enter a wine|Type is required|Give it a score)/.test(e));
+}
 
-function loadDraft(): NoteState | null {
+// On-device safety copy of the note being written, so nothing is lost if the app
+// closes before you save. Separate from the drafts kept in the workbook: it
+// remembers which workbook draft (if any) it belongs to.
+const LOCAL_KEY = `wine-cellar.noteDraft.${import.meta.env.MODE}`;
+
+function loadLocal(draftId: string | null): NoteState | null {
   try {
-    const raw = localStorage.getItem(DRAFT_KEY);
-    return raw ? { ...EMPTY, ...JSON.parse(raw) } : null;
+    const raw = localStorage.getItem(LOCAL_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    const owner: string | null = parsed && "state" in parsed ? (parsed.draftId ?? null) : null;
+    const state = parsed && "state" in parsed ? parsed.state : parsed;
+    return owner === draftId ? { ...EMPTY, ...state } : null;
   } catch {
     return null;
   }
 }
-function saveDraft(f: NoteState | null) {
+function saveLocal(f: NoteState | null, draftId: string | null = null) {
   try {
-    if (f) localStorage.setItem(DRAFT_KEY, JSON.stringify(f));
-    else localStorage.removeItem(DRAFT_KEY);
+    if (f) localStorage.setItem(LOCAL_KEY, JSON.stringify({ draftId, state: f }));
+    else localStorage.removeItem(LOCAL_KEY);
   } catch {
-    /* drafts are a convenience */
+    /* a convenience only */
   }
 }
 
 // ---- component -----------------------------------------------------------------
 
-export default function NoteForm({ editId, wineId, fromId }: { editId?: string; wineId?: string; fromId?: string }) {
-  const { data, putTasting } = useWorkbook();
+export default function NoteForm({ editId, wineId, fromId, draftId }: { editId?: string; wineId?: string; fromId?: string; draftId?: string }) {
+  const { data, putTasting, putDraft, removeDraft } = useWorkbook();
   const toast = useToast();
   const editing = data.tastings.find((t) => t.tastingId === editId);
   const isEdit = !!editId;
+  const draft = draftId ? data.drafts.find((d) => d.draftId === draftId) : undefined;
 
   const initial = useMemo<{ state: NoteState; restored: boolean }>(() => {
     if (editing) return { state: fromTasting(editing), restored: false };
+    if (draftId) {
+      const local = loadLocal(draftId);
+      if (local) return { state: local, restored: true };
+      return { state: draft ? fromTasting(draft.note) : EMPTY, restored: false };
+    }
     if (wineId) {
       const w = data.wines.find((x) => x.wineId === wineId);
       if (w) return { state: { ...EMPTY, ...wineFields(w) }, restored: false };
@@ -193,8 +212,8 @@ export default function NoteForm({ editId, wineId, fromId }: { editId?: string; 
       const t = data.tastings.find((x) => x.tastingId === fromId);
       if (t) return { state: { ...EMPTY, ...wineFields(t) }, restored: false };
     }
-    const draft = loadDraft();
-    return draft ? { state: draft, restored: true } : { state: EMPTY, restored: false };
+    const local = loadLocal(null);
+    return local ? { state: local, restored: true } : { state: EMPTY, restored: false };
   }, []); // computed once, when the form opens
 
   const [f, setF] = useState<NoteState>(initial.state);
@@ -204,6 +223,7 @@ export default function NoteForm({ editId, wineId, fromId }: { editId?: string; 
   const [showMore, setShowMore] = useState(!!(initial.state.vessel || initial.state.viticulture));
   const [showWineDetails, setShowWineDetails] = useState(false);
   const baseline = useRef(toCells(initial.state));
+  const hasWine = !!f.name;
   const set = <K extends keyof NoteState>(k: K, v: NoteState[K]) => setF((p) => ({ ...p, [k]: v }));
   const text = (k: keyof NoteState) => (e: { target: { value: string } }) => set(k, e.target.value as never);
 
@@ -230,16 +250,32 @@ export default function NoteForm({ editId, wineId, fromId }: { editId?: string; 
     // A brand-new wine needs at least its type filled in.
     if (!w.type) setShowWineDetails(true);
   };
+  // Reading a label once a wine is already filled in (e.g. "Wine 1" at a blind
+  // tasting): replace the wine details, or only fill the empty ones.
+  const [replaceWine, setReplaceWine] = useState(true);
+  const blanksOnly = (p: NoteState, fields: Partial<NoteState>) =>
+    Object.fromEntries(Object.entries(fields).filter(([k, v]) => v && !String(p[k as keyof NoteState] ?? "").trim())) as Partial<NoteState>;
   const applyLabel = ({ fields, unsure }: LabelApply) => {
-    setF((p) => ({ ...p, ...wineFields({}), ...fields }));
-    setFromLabel({ filled: new Set(Object.keys(fields)), unsure });
+    const added = !hasWine || replaceWine ? (fields as Partial<NoteState>) : blanksOnly(f, fields);
+    setF((p) => (!hasWine || replaceWine ? { ...p, ...wineFields({}), ...fields } : { ...p, ...added }));
+    const keys = Object.keys(added);
+    setFromLabel(keys.length ? { filled: new Set(keys), unsure: unsure } : null);
+    if (!keys.length) toast({ text: "The label didn't add anything: every wine detail was already filled in." });
     setShowWineDetails(true);
   };
+  const pickFromLabel = (w: Partial<WineFields>) => {
+    if (!hasWine || replaceWine) return pickWine(w);
+    setFromLabel(null);
+    setF((p) => ({ ...p, ...blanksOnly(p, wineFields(w)) }));
+  };
 
-  // Keep an on-device draft of new notes so nothing is lost.
+  // Keep an on-device copy of new notes and drafts so nothing is lost.
   useEffect(() => {
-    if (!isEdit && (f.name || f.noseTags.length || f.score !== null)) saveDraft(f);
-  }, [f, isEdit]);
+    if (isEdit || !(f.name || f.noseTags.length || f.score !== null)) return;
+    // An opened draft that hasn't been changed needs no copy.
+    if (draft && JSON.stringify(f) === JSON.stringify(fromTasting(draft.note))) return;
+    saveLocal(f, draftId ?? null);
+  }, [f, isEdit, draftId, draft]);
 
   const vocab = useMemo(() => buildVocab(data.tastings), [data.tastings]);
   const tanninVocab = useMemo(() => buildVocab([], "tanninNature", data.tastings), [data.tastings]);
@@ -250,13 +286,53 @@ export default function NoteForm({ editId, wineId, fromId }: { editId?: string; 
     [data.tastings],
   );
 
-  if (editId && !editing) {
+  if ((editId && !editing) || (draftId && !draft)) {
     return (
       <section className="card">
-        <p>Tasting note {editId} wasn't found.</p>
+        <p>{editId ? `Tasting note ${editId}` : `Draft ${draftId}`} wasn't found{draftId ? ": it may have been finished or deleted on another device" : ""}.</p>
         <a href={href("notes")}>← Notes</a>
       </section>
     );
+  }
+
+  async function saveAsDraft() {
+    const errs = validateDraft(f);
+    if (!f.name.trim() && !f.noseTags.length && f.score === null && !f.colourHue && !f.noteFree.trim()) {
+      errs.unshift("Add something first: a wine (or \"Wine 1\" for a blind tasting), aromas or a score.");
+    }
+    setErrors(errs);
+    if (errs.length) {
+      window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" });
+      return;
+    }
+    setBusy(true);
+    try {
+      const saved = draftId ? await updateDraft(data.file.id, draftId, toCells(f)) : await addDraft(data.file.id, toCells(f));
+      saveLocal(null);
+      putDraft(saved);
+      toast({ text: draftId ? "Draft updated." : "Saved as a draft. Find it under Drafts on the Notes tab." });
+      go("notes");
+    } catch (e) {
+      toast({ text: describeError(e), error: true });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function discardDraft() {
+    if (!draftId || !window.confirm("Delete this draft? This can't be undone.")) return;
+    setBusy(true);
+    try {
+      await deleteDraft(data.file.id, draftId);
+      saveLocal(null);
+      removeDraft(draftId);
+      toast({ text: "Draft deleted." });
+      go("notes");
+    } catch (e) {
+      toast({ text: describeError(e), error: true });
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function save() {
@@ -277,10 +353,19 @@ export default function NoteForm({ editId, wineId, fromId }: { editId?: string; 
         saved = Object.keys(changed).length ? await updateTasting(data.file.id, editId!, changed) : editing!;
       } else {
         saved = await addTasting(data.file.id, cells);
-        saveDraft(null);
+        saveLocal(null);
       }
       putTasting(saved);
-      toast({ text: isEdit ? "Note saved." : `Tasting note ${saved.tastingId} saved.` });
+      let leftover = "";
+      if (draftId) {
+        try {
+          await deleteDraft(data.file.id, draftId);
+          removeDraft(draftId);
+        } catch {
+          leftover = ` The draft ${draftId} couldn't be removed: delete it from Drafts.`;
+        }
+      }
+      toast({ text: isEdit ? "Note saved." : `Tasting note ${saved.tastingId} saved.${leftover}`, error: !!leftover });
       go(`note/${saved.tastingId}`);
     } catch (e) {
       toast({ text: describeError(e), error: true });
@@ -289,24 +374,31 @@ export default function NoteForm({ editId, wineId, fromId }: { editId?: string; 
     }
   }
 
-  const hasWine = !!f.name;
-
   return (
     <>
       <a className="back" href={href(isEdit ? `note/${editId}` : "notes")}>← {isEdit ? "Back" : "Notes"}</a>
 
+      {draft && (
+        <div className="notice draft-notice">
+          Continuing your draft{draft.saved ? ` from ${formatSaved(draft.saved)}` : ""}.{" "}
+          <button className="link" disabled={busy} onClick={() => void discardDraft()}>
+            Delete draft
+          </button>
+        </div>
+      )}
+
       {restored && (
         <div className="notice">
-          Restored your unsaved note.{" "}
+          {draft ? "Restored changes you hadn't saved yet." : "Restored your unsaved note."}{" "}
           <button
             className="link"
             onClick={() => {
-              saveDraft(null);
-              setF(EMPTY);
+              saveLocal(null);
+              setF(draft ? fromTasting(draft.note) : EMPTY);
               setRestored(false);
             }}
           >
-            Discard it
+            {draft ? "Undo them" : "Discard it"}
           </button>
         </div>
       )}
@@ -318,14 +410,17 @@ export default function NoteForm({ editId, wineId, fromId }: { editId?: string; 
           void save();
         }}
       >
-        <h2 className="note-form-title">{isEdit ? `Edit ${editId}` : "New tasting note"}</h2>
+        <h2 className="note-form-title">
+          {isEdit ? `Edit ${editId}` : "New tasting note"}
+          {draft && <span className="draft-badge">Draft</span>}
+        </h2>
 
         {/* ---- Wine ---- */}
         <Section title="Wine">
           {!hasWine && !isEdit ? (
             <>
               <WinePicker onPick={pickWine} />
-              {labelReaderOn() && <LabelFill onApply={applyLabel} onPick={(w) => pickWine(w as Partial<WineFields>)} />}
+              {labelReaderOn() && <LabelFill onApply={applyLabel} onPick={(w) => pickFromLabel(w as Partial<WineFields>)} />}
             </>
           ) : (
             <>
@@ -364,6 +459,15 @@ export default function NoteForm({ editId, wineId, fromId }: { editId?: string; 
                   Filled from the label: check the highlighted fields.
                   {fromLabel.unsure.length > 0 && <> Least sure about: {fromLabel.unsure.join(", ")}.</>}
                 </p>
+              )}
+              {labelReaderOn() && (
+                <LabelFill compact onApply={applyLabel} onPick={(w) => pickFromLabel(w as Partial<WineFields>)}>
+                  <label className="switch small">
+                    <input type="checkbox" checked={replaceWine} onChange={(e) => setReplaceWine(e.target.checked)} /> Replace the wine details
+                    with what's on the label
+                  </label>
+                  {!replaceWine && <p className="muted small">Only empty wine details will be filled.</p>}
+                </LabelFill>
               )}
             </>
           )}
@@ -519,6 +623,11 @@ export default function NoteForm({ editId, wineId, fromId }: { editId?: string; 
           <button className="primary" type="submit" disabled={busy}>
             {busy ? "Saving…" : isEdit ? "Save changes" : "Save note"}
           </button>
+          {!isEdit && (
+            <button type="button" disabled={busy} onClick={() => void saveAsDraft()}>
+              {draft ? "Update draft" : "Save as draft"}
+            </button>
+          )}
           <a href={href(isEdit ? `note/${editId}` : "notes")}>Cancel</a>
         </div>
       </form>

@@ -41,6 +41,8 @@ export const config = {
     history: "Opened",
     /** Bottles sold. Created automatically (on a new "Sold" sheet) the first time you sell a bottle. */
     sales: "Sold",
+    /** Unfinished tasting notes. Created automatically (on a new "Drafts" sheet) the first time you save a draft. */
+    drafts: "Drafts",
   },
 
   lists: [

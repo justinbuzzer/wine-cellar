@@ -139,6 +139,7 @@ function Routes() {
       if (sub === "from") return <NoteForm key={`new-t-${subArg}`} fromId={subArg} />;
       return <NoteForm key="new" />;
     }
+    if (arg === "draft" && sub) return <NoteForm key={`draft-${sub}`} draftId={sub} />;
     if (arg && sub === "edit") return <NoteForm key={`edit-${arg}`} editId={arg} />;
     if (arg) return <NoteView key={arg} id={arg} />;
   }

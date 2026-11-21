@@ -349,6 +349,15 @@ mark { background: var(--mark); color: inherit; border-radius: 2px; padding: 0 1
 .label-fill .or { text-align: center; color: var(--muted); font-size: 0.85rem; margin: 10px 0; }
 .label-button { width: 100%; }
 .label-fill .label-buttons { flex-wrap: nowrap; }
+.label-compact { border-top: 1px dashed var(--border); margin-top: 10px; padding-top: 10px; display: grid; gap: 6px; }
+.switch.small { font-weight: 400; font-size: 0.9rem; align-items: flex-start; }
+.drafts-box { padding-top: 0; padding-bottom: 0; border-color: var(--gold); }
+.drafts-toggle { all: unset; box-sizing: border-box; display: flex; width: 100%; justify-content: space-between; align-items: center; padding: 12px 0; cursor: pointer; }
+.drafts-toggle:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+.drafts-box .chev { color: var(--muted); font-size: 1.1rem; }
+.drafts-list { padding-bottom: 4px; }
+.draft-badge { display: inline-block; margin-left: 8px; padding: 1px 8px; border-radius: 6px; font-size: 0.75rem; vertical-align: middle; background: var(--badge-bg); border: 1px solid var(--gold); }
+.draft-notice { border: 1px solid var(--gold); }
 .label-buttons .label-button { flex: 1 1 0; width: auto; }
 .label-thumbs { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 10px; }
 .label-thumbs figure { position: relative; margin: 0; }

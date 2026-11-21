@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { shortName, type Tasting, type Wine } from "../data";
 import { LabelReaderError, matchLabel, readLabel, shrinkPhoto, type LabelField, type LabelMatch, type LabelResult } from "../label";
 import { useWorkbook } from "../store";
@@ -21,7 +21,19 @@ export interface LabelApply {
  * wine you already have or fill the wine details from the label.
  * The photos only live in this component's memory and are dropped once used.
  */
-export default function LabelFill({ onApply, onPick }: { onApply: (a: LabelApply) => void; onPick: (w: Wine | Tasting) => void }) {
+export default function LabelFill({
+  onApply,
+  onPick,
+  compact,
+  children,
+}: {
+  onApply: (a: LabelApply) => void;
+  onPick: (w: Wine | Tasting) => void;
+  /** A smaller version, shown once a wine is already filled in. */
+  compact?: boolean;
+  /** Extra options shown with the buttons (e.g. replace or keep the wine details). */
+  children?: ReactNode;
+}) {
   const { data } = useWorkbook();
   const input = useRef<HTMLInputElement>(null);
   const camera = useRef<HTMLInputElement>(null);
@@ -126,6 +138,7 @@ export default function LabelFill({ onApply, onPick }: { onApply: (a: LabelApply
         <button type="button" className="link" onClick={() => applyLabel(found.result)}>
           No, use the label as a new wine: {[found.result.producer, found.result.name, found.result.vintage].filter(Boolean).join(" ")}
         </button>
+        {children}
       </div>
     );
   }
@@ -155,7 +168,16 @@ export default function LabelFill({ onApply, onPick }: { onApply: (a: LabelApply
           e.target.value = ""; // the same photo can be chosen again
         }}
       />
-      {photos.length === 0 ? (
+      {photos.length === 0 && compact ? (
+        <div className="label-compact">
+          <div className="actions">
+            <span className="muted small">Label to hand?</span>
+            <button type="button" onClick={() => camera.current?.click()}>📷 Take photo</button>
+            <button type="button" onClick={() => input.current?.click()}>🖼️ Choose photos</button>
+          </div>
+          {children}
+        </div>
+      ) : photos.length === 0 ? (
         <>
           <p className="or">or fill from the label</p>
           <div className="actions label-buttons">
@@ -194,6 +216,7 @@ export default function LabelFill({ onApply, onPick }: { onApply: (a: LabelApply
             )}
             {!busy && <button type="button" className="link" onClick={reset}>Cancel</button>}
           </div>
+          {compact && children}
           <p className="muted small">The photos are sent once to read the label, then thrown away. Nothing is saved.</p>
         </>
       )}

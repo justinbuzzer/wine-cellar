@@ -3,6 +3,7 @@ import { shortName, type Tasting } from "../data";
 import { EMPTY_QUERY, fold, highlightParts, searchNotes, tokens, type GrapeKind, type NoteQuery, type NoteSort } from "../notesearch";
 import { forgetScroll, go, href } from "../router";
 import { useWorkbook } from "../store";
+import { formatSaved, newestDrafts, type Draft } from "../drafts";
 import { restoreListPosition, TypeDot } from "../ui";
 
 // Kept outside the component so the search survives opening a note and coming back.
@@ -129,6 +130,8 @@ export default function Notes() {
         )}
       </div>
 
+      <DraftsBox drafts={data.drafts} />
+
       <div className="summary">
         <span>
           <strong>{results.length.toLocaleString()}</strong>
@@ -153,6 +156,47 @@ export default function Notes() {
         </section>
       )}
     </>
+  );
+}
+
+/** Unfinished notes: folded away until you open the list. */
+function DraftsBox({ drafts }: { drafts: Draft[] }) {
+  const [open, setOpen] = useState(false);
+  if (!drafts.length) return null;
+  return (
+    <section className={open ? "card drafts-box open" : "card drafts-box"}>
+      <button type="button" className="drafts-toggle" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
+        <span>
+          <strong>Drafts</strong> <span className="muted">({drafts.length})</span>
+        </span>
+        <span className="chev" aria-hidden="true">{open ? "▴" : "▾"}</span>
+      </button>
+      {open && (
+        <div className="drafts-list">
+          {newestDrafts(drafts).map((d) => {
+            const n = d.note;
+            const progress = [
+              n.type,
+              n.nose ? "nose done" : null,
+              n.score !== null ? `score ${n.score}` : "no score yet",
+            ].filter(Boolean).join(" · ");
+            return (
+              <a key={d.draftId} className="tasting-row note-link" href={href(`note/draft/${d.draftId}`)}>
+                <div>
+                  <TypeDot type={n.type} /> {n.producer && <strong>{n.producer} </strong>}
+                  {n.name ? shortName(n) : <span className="muted">No wine yet</span>} <span className="muted">{n.vintage}</span>
+                </div>
+                <div className="muted small">
+                  {d.saved ? `Saved ${formatSaved(d.saved)} · ` : ""}
+                  {progress}
+                  {n.source ? ` · ${n.source}` : ""}
+                </div>
+              </a>
+            );
+          })}
+        </div>
+      )}
+    </section>
   );
 }
 
