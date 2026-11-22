@@ -11,7 +11,7 @@ import { locateWine, returnBottles, takeBottles } from "./history";
 import { appendLog, readLog, removeLog, type LogSpec } from "./logtable";
 import { SALES_COLUMNS, toSale, type Sale } from "./salesmodel";
 
-const SPEC: LogSpec = {
+export const SOLD_SPEC: LogSpec = {
   table: config.tables.sales,
   columns: SALES_COLUMNS,
   idHeader: "SaleID",
@@ -23,7 +23,7 @@ const SPEC: LogSpec = {
 };
 
 export function readSales(wb: Workbook): Promise<TableSnapshot | null> {
-  return readLog(wb, SPEC.table);
+  return readLog(wb, SOLD_SPEC.table);
 }
 
 export interface SaleDetails {
@@ -64,7 +64,7 @@ export function sellBottles(itemId: string, wineId: string, from: Location, d: S
       Notes: d.notes.trim(),
     };
     try {
-      return { wine, sale: toSale(await appendLog(wb, SPEC, values)), logError: null };
+      return { wine, sale: toSale(await appendLog(wb, SOLD_SPEC, values)), logError: null };
     } catch (e) {
       return { wine, sale: null, logError: e };
     }
@@ -75,12 +75,12 @@ export function sellBottles(itemId: string, wineId: string, from: Location, d: S
 export function undoSale(itemId: string, wineId: string, from: Location, bottles: number, saleId: string | null): Promise<Wine> {
   return withSession(itemId, async (wb) => {
     const wine = await returnBottles(wb, wineId, from, bottles);
-    if (saleId) await removeLog(wb, SPEC, saleId);
+    if (saleId) await removeLog(wb, SOLD_SPEC, saleId);
     return wine;
   });
 }
 
 /** Removes one sale record (bottle counts are not changed). */
 export function deleteSale(itemId: string, saleId: string): Promise<void> {
-  return withSession(itemId, (wb) => removeLog(wb, SPEC, saleId));
+  return withSession(itemId, (wb) => removeLog(wb, SOLD_SPEC, saleId));
 }

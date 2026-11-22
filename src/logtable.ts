@@ -75,6 +75,35 @@ export async function appendLog(wb: Workbook, spec: LogSpec, values: Record<stri
   return recordFrom(headers, row);
 }
 
+/**
+ * Adds several rows at once (each with the next free ID). Much faster than
+ * appendLog in a loop: one read and one write once the table exists.
+ */
+export async function appendLogs(wb: Workbook, spec: LogSpec, rows: Record<string, Cell>[]): Promise<void> {
+  if (!rows.length) return;
+  let snap = await readLog(wb, spec.table);
+  let rest = rows;
+  if (!snap) {
+    await appendLog(wb, spec, { ...rows[0] });
+    rest = rows.slice(1);
+    if (!rest.length) return;
+    snap = await wb.readTable(spec.table);
+  }
+  const headers = headersOf(snap.values[0]);
+  const first = Number(nextId(snap, spec.idHeader, spec.idPrefix, spec.idWidth).slice(spec.idPrefix.length));
+  const cells = rest.map((r, i) => {
+    const values = { ...r, [spec.idHeader]: `${spec.idPrefix}${String(first + i).padStart(spec.idWidth, "0")}` };
+    return headers.map((h) => values[h] ?? "");
+  });
+  // A table emptied by Undo keeps one blank row: fill that first.
+  const blank = snap.values.findIndex((r, k) => k > 0 && isBlank(r));
+  if (blank > 0) {
+    await wb.writeValues(snap.address.sheet, rowRange(snap, blank - 1), [cells[0]]);
+    cells.shift();
+  }
+  await wb.addRows(spec.table, cells);
+}
+
 /** Removes the row with this ID (a table keeps its last row, blanked). */
 export async function removeLog(wb: Workbook, spec: Pick<LogSpec, "table" | "idHeader">, id: string): Promise<void> {
   const snap = await readLog(wb, spec.table);

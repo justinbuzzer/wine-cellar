@@ -20,6 +20,7 @@ import History from "./views/History";
 import Producers from "./views/Producers";
 import Research from "./views/Research";
 import Sales from "./views/Sales";
+import Stocktake from "./views/Stocktake";
 import { LogoProvider } from "./logos";
 
 export default function App({ account }: { account: AccountInfo | null }) {
@@ -66,7 +67,7 @@ const TABS = [
 function Shell({ account, tabs, children }: { account?: AccountInfo; tabs?: boolean; children: ReactNode }) {
   const route = useRoute();
   const section =
-    route[0] === "wine" || route[0] === "add" || route[0] === "edit" || route[0] === "purchase" || route[0] === "sell" || !route[0]
+    route[0] === "wine" || route[0] === "add" || route[0] === "edit" || route[0] === "purchase" || route[0] === "sell" || route[0] === "stocktake" || !route[0]
       ? "cellar"
       : route[0] === "note"
         ? "notes"
@@ -156,6 +157,8 @@ function Routes() {
       return <PurchaseForm />;
     case "sell":
       return <SellForm key={arg ?? "sell"} preselect={arg} />;
+    case "stocktake":
+      return <Stocktake key={`${arg ?? ""}-${sub ?? ""}`} step={arg} arg={sub} />;
     case "edit":
       return <WineForm key={`edit-${arg}`} id={arg} />;
     case "list":

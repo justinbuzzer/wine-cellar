@@ -301,6 +301,38 @@ export class Workbook {
   async addRow(table: string, row: Cell[]): Promise<{ index: number; values: Cell[][] }> {
     return this.req("POST", `/tables/${enc(table)}/rows`, { values: [row.map((v) => v ?? "")] });
   }
+
+  /** Appends several rows to a table in one request. */
+  async addRows(table: string, rows: Cell[][]): Promise<void> {
+    if (!rows.length) return;
+    await this.req("POST", `/tables/${enc(table)}/rows`, { values: rows.map((r) => r.map((v) => v ?? "")) });
+  }
+
+  /** Everything used on a worksheet, or null if the sheet doesn't exist. */
+  async readUsedRange(sheet: string): Promise<Cell[][] | null> {
+    try {
+      const res = await this.req<{ values: Cell[][] }>("GET", `/worksheets/${enc(sheet)}/usedRange?$select=values`);
+      return res.values;
+    } catch (e) {
+      if (e instanceof GraphError && (e.status === 404 || /notfound/i.test(e.code))) return null;
+      throw e;
+    }
+  }
+
+  /** Empties the cells in a range (values only). */
+  async clearRange(sheet: string, address: string): Promise<void> {
+    await this.req("POST", `/worksheets/${enc(sheet)}/range(address='${address}')/clear`, { applyTo: "Contents" });
+  }
+
+  /** Removes a worksheet; does nothing if it's already gone. */
+  async deleteWorksheet(sheet: string): Promise<void> {
+    try {
+      await this.req("DELETE", `/worksheets/${enc(sheet)}`);
+    } catch (e) {
+      if (e instanceof GraphError && (e.status === 404 || /notfound/i.test(e.code))) return;
+      throw e;
+    }
+  }
 }
 
 /** Run writes inside a workbook session that is always closed afterwards. */

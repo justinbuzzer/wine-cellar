@@ -5,6 +5,7 @@ import { LOCATIONS, type Location } from "../locations";
 import { ProducerLogo } from "../logos";
 import { forgetScroll, go, href } from "../router";
 import { useWorkbook } from "../store";
+import { useStocktake } from "../stocktake";
 import { bottles, FilterHeader, restoreListPosition, TypeDot, useLongPress } from "../ui";
 import { sellable } from "./SellForm";
 import { vintageBucket, vintageBuckets } from "../overview";
@@ -87,6 +88,7 @@ export function locationLine(w: Wine): string {
 
 export default function Cellar() {
   const { data } = useWorkbook();
+  const stocktake = useStocktake();
   const [f, setF] = useState<Filters>(saved);
   const update = (p: Partial<Filters>) => setF((prev) => (saved = { ...prev, ...p }));
 
@@ -164,6 +166,12 @@ export default function Cellar() {
           {data.qtyIssues.length} wine{data.qtyIssues.length === 1 ? "" : "s"} {data.qtyIssues.length === 1 ? "has" : "have"} bottle
           counts that need repairing in the spreadsheet. <a href={href("diagnostics")}>Review and repair</a>
         </div>
+      )}
+
+      {stocktake && (
+        <a className="notice st-banner" href={href("stocktake")}>
+          Stocktake in progress · {Object.keys(stocktake.counts).length} counted <span>Continue →</span>
+        </a>
       )}
 
       <FilterHeader

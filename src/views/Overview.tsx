@@ -9,6 +9,7 @@ import { cellarStats, drinkingStats, MIN_NOTES, noteStats, regionLabel, topN, ty
 import { showInNotes } from "./Notes";
 import { go, href } from "../router";
 import { useWorkbook } from "../store";
+import { useStocktake } from "../stocktake";
 import { TypeDot } from "../ui";
 import { TYPE_ORDER, typeLabel } from "../winelist";
 import { showInCellar } from "./Cellar";
@@ -32,6 +33,18 @@ function LogoProgress() {
       <span className="muted">
         {done} of {groups.length} producers have one →
       </span>
+    </a>
+  );
+}
+
+/** Link to the stocktake, with progress while one is under way. */
+function StocktakeLink() {
+  const st = useStocktake();
+  const counted = st ? Object.keys(st.counts).length : 0;
+  return (
+    <a className="card prompt-card" href={href("stocktake")}>
+      <strong>Stocktake</strong>
+      <span className="muted">{st ? `In progress: ${counted} wine${counted === 1 ? "" : "s"} counted →` : "Check your bottles against your list →"}</span>
     </a>
   );
 }
@@ -65,6 +78,7 @@ export default function Overview() {
       </div>
 
       <LogoProgress />
+      <StocktakeLink />
 
       <div className="ov-grid">
         <section className="card">

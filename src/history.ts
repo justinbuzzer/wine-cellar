@@ -12,7 +12,7 @@ import { result } from "./inventory";
 import { appendLog, readLog, removeLog, type LogSpec } from "./logtable";
 import { locateById, setCells, type Located } from "./tableops";
 
-const SPEC: LogSpec = {
+export const OPENED_SPEC: LogSpec = {
   table: config.tables.history,
   columns: HISTORY_COLUMNS,
   idHeader: "OpenID",
@@ -26,7 +26,7 @@ const count = (v: Cell) => (typeof v === "number" ? v : Number(v) || 0);
 
 /** The history table, or null if it hasn't been created yet. */
 export function readHistory(wb: Workbook): Promise<TableSnapshot | null> {
-  return readLog(wb, SPEC.table);
+  return readLog(wb, OPENED_SPEC.table);
 }
 
 async function logOpening(wb: Workbook, wine: Wine, from: Location, date: string, occasion: string): Promise<Opening> {
@@ -41,7 +41,7 @@ async function logOpening(wb: Workbook, wine: Wine, from: Location, date: string
     Price: wine.price,
     Occasion: occasion.trim(),
   };
-  return toOpening(await appendLog(wb, SPEC, values));
+  return toOpening(await appendLog(wb, OPENED_SPEC, values));
 }
 
 /** Finds the wine and checks it has bottle counts per location. */
@@ -98,12 +98,12 @@ export function openBottle(
 export function undoOpen(itemId: string, wineId: string, from: Location, openId: string | null): Promise<Wine> {
   return withSession(itemId, async (wb) => {
     const wine = await returnBottles(wb, wineId, from, 1);
-    if (openId) await removeLog(wb, SPEC, openId);
+    if (openId) await removeLog(wb, OPENED_SPEC, openId);
     return wine;
   });
 }
 
 /** Removes one history entry (bottle counts are not changed). */
 export function deleteOpening(itemId: string, openId: string): Promise<void> {
-  return withSession(itemId, (wb) => removeLog(wb, SPEC, openId));
+  return withSession(itemId, (wb) => removeLog(wb, OPENED_SPEC, openId));
 }
