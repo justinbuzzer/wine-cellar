@@ -14,18 +14,50 @@ import { LogoDialog, ProducerLogo, useLogos } from "../logos";
 import { producerKey } from "../producers";
 import { sellBottles, undoSale, type SaleDetails } from "../sales";
 import { formatHeld, formatPct, heldYears, lastBoughtYear, newestSales, saleMoney } from "../salesmodel";
+import { isSetUp, placementOf, sourceKey, sourcesOf, spotName } from "../spots";
+import { MoveSheet, NEW_LOOSE, SpotSelect, useResolveSpot } from "./SpotPicker";
+import { spotHref } from "./Storage";
 
-type Dialog = null | "open" | "add" | "move" | "arrived" | "sell";
+type Dialog = null | "open" | "add" | "arrived" | "sell";
 
 const money = (n: number | null) => formatPrice(n === null ? null : Math.round(n * 100) / 100, config.currency);
 
-const other = (l: Location): Location => (l === "Home" ? "K Cellars" : "Home");
+/** Boxes/racks a location's bottles could come from (null = not placed); empty when there's no choice. */
+function spotChoices(w: Wine, loc: Location): (string | null)[] {
+  const p = placementOf(w, loc);
+  const xs: (string | null)[] = [...p.spots.map((s) => s.spot), ...(p.unplaced > 0 ? [null] : [])];
+  return xs.length > 1 ? xs : [];
+}
+
+/** Where bottles come from unless you choose: the first box/rack listed (also when it's the only one). */
+const firstSpot = (w: Wine, loc: Location): string | null => placementOf(w, loc).spots[0]?.spot ?? null;
+
+function FromSpot({ w, loc, value, onChange }: { w: Wine; loc: Location; value: string | null; onChange: (s: string | null) => void }) {
+  const xs = spotChoices(w, loc);
+  if (!xs.length) return null;
+  const p = placementOf(w, loc);
+  return (
+    <label className="field">
+      <span>From which {loc === "Home" ? "rack" : "box"}?</span>
+      <select value={value ?? ""} onChange={(e) => onChange(e.target.value || null)}>
+        {xs.map((s) => (
+          <option key={s ?? ""} value={s ?? ""}>
+            {spotName(s)} ({s === null ? p.unplaced : p.spots.find((x) => x.spot === s)?.n})
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
 
 export default function WineDetail({ id }: { id: string }) {
   const { data, putWine, putOpening, removeOpening, putSale, removeSale } = useWorkbook();
   const toast = useToast();
+  const resolveSpot = useResolveSpot();
   const [busy, setBusy] = useState(false);
   const [dialog, setDialog] = useState<Dialog>(null);
+  /** The Move sheet: from a particular spot, or (empty) let it choose. */
+  const [moving, setMoving] = useState<{ from?: { loc: Location; spot: string | null }; place?: boolean } | null>(null);
   const [justOpened, setJustOpened] = useState(false);
   const [logoOpen, setLogoOpen] = useState(false);
   const logos = useLogos();
@@ -73,10 +105,10 @@ export default function WineDetail({ id }: { id: string }) {
     }
   }
 
-  const open = async (l: Location, date: string, occasion: string) => {
+  const open = async (l: Location, date: string, occasion: string, spot: string | null) => {
     setBusy(true);
     try {
-      const res = await openBottle(itemId, id, l, { date, occasion });
+      const res = await openBottle(itemId, id, l, { date, occasion, spot });
       putWine(res.wine);
       if (res.opening) putOpening(res.opening);
       setJustOpened(true);
@@ -91,7 +123,7 @@ export default function WineDetail({ id }: { id: string }) {
           label: "Undo",
           run: async () => {
             try {
-              putWine(await undoOpen(itemId, id, l, openId));
+              putWine(await undoOpen(itemId, id, l, openId, spot));
               if (openId) removeOpening(openId);
               setJustOpened(false);
               toast({ text: "Undone." });
@@ -108,10 +140,10 @@ export default function WineDetail({ id }: { id: string }) {
     }
   };
 
-  const sell = async (l: Location, d: SaleDetails) => {
+  const sell = async (l: Location, d: SaleDetails, spot: string | null) => {
     setBusy(true);
     try {
-      const res = await sellBottles(itemId, id, l, d);
+      const res = await sellBottles(itemId, id, l, d, spot);
       putWine(res.wine);
       if (res.sale) putSale(res.sale);
       setDialog(null);
@@ -125,7 +157,7 @@ export default function WineDetail({ id }: { id: string }) {
           label: "Undo",
           run: async () => {
             try {
-              putWine(await undoSale(itemId, id, l, d.bottles, saleId));
+              putWine(await undoSale(itemId, id, l, d.bottles, saleId, spot));
               if (saleId) removeSale(saleId);
               toast({ text: "Undone." });
             } catch (e) {
@@ -212,6 +244,24 @@ export default function WineDetail({ id }: { id: string }) {
             Inventory table to track bottles by location.
           </p>
         )}
+        {hasLocations && wine.qty > 0 && (isSetUp(data.layout, "K Cellars") || isSetUp(data.layout, "Home") || wine.kcSpots || wine.homeSpots) && (
+          <div className="where">
+            <h3>Where</h3>
+            {sourcesOf(wine).map((s) => (
+              <div className="where-row" key={sourceKey(s)}>
+                <a href={spotHref(s.loc, s.spot)}>
+                  {s.loc} · <strong>{spotName(s.spot)}</strong>
+                </a>
+                <b>{s.n}</b>
+                {s.spot === null && isSetUp(data.layout, s.loc) ? (
+                  <button className="small" disabled={busy} onClick={() => setMoving({ from: s, place: true })}>Place</button>
+                ) : (
+                  <button className="small" disabled={busy} onClick={() => setMoving({ from: s })}>Move</button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
         <div className="actions">
           <button
             className="primary"
@@ -221,7 +271,7 @@ export default function WineDetail({ id }: { id: string }) {
             🍷 Open a bottle
           </button>
           <button disabled={!hasLocations || busy} onClick={() => setDialog("add")}>+ Add bottles</button>
-          <button disabled={!hasLocations || busy || stocked.length === 0} onClick={() => setDialog("move")}>⇄ Move</button>
+          <button disabled={!hasLocations || busy || stocked.length === 0} onClick={() => setMoving({})}>⇄ Move</button>
           <button disabled={!hasLocations || busy || stocked.length === 0} onClick={() => setDialog("sell")}>💰 Sell</button>
           {wine.status === "NYA" && (
             <button disabled={busy} onClick={() => setDialog("arrived")}>✓ Mark arrived</button>
@@ -320,12 +370,13 @@ export default function WineDetail({ id }: { id: string }) {
 
       {dialog === "open" && (
         <OpenDialog
+          wine={wine}
           stocked={stocked}
           at={at}
           busy={busy}
           firstTime={!data.hasHistory}
           onClose={() => setDialog(null)}
-          onOpen={(l, date, occasion) => void open(l, date, occasion)}
+          onOpen={(l, date, occasion, spot) => void open(l, date, occasion, spot)}
         />
       )}
 
@@ -339,7 +390,7 @@ export default function WineDetail({ id }: { id: string }) {
           lastBought={wine.yearPurchased ?? lastBoughtYear(data.sales, id)}
           boughtFromList={wine.yearPurchased !== null}
           onClose={() => setDialog(null)}
-          onSell={(l, d) => void sell(l, d)}
+          onSell={(l, d, spot) => void sell(l, d, spot)}
         />
       )}
 
@@ -347,47 +398,39 @@ export default function WineDetail({ id }: { id: string }) {
         <AddDialog
           busy={busy}
           onClose={() => setDialog(null)}
-          onSave={(l, n) =>
-            act(
-              () => adjustBottles(itemId, id, { [l]: n }),
+          onSave={(l, n, chosen) => {
+            let spot: string | null = null;
+            return act(
+              async () => {
+                spot = await resolveSpot(chosen);
+                return adjustBottles(itemId, id, { [l]: n }, { [l]: { to: spot } });
+              },
               `Added ${bottles(n)} at ${l}.`,
-              () => adjustBottles(itemId, id, { [l]: -n }),
-            )
-          }
+              () => adjustBottles(itemId, id, { [l]: -n }, { [l]: { from: spot } }),
+            );
+          }}
         />
       )}
 
-      {dialog === "move" && (
-        <MoveDialog
-          wine={wine}
-          busy={busy}
-          onClose={() => setDialog(null)}
-          onSave={(from, n) =>
-            act(
-              () => adjustBottles(itemId, id, { [from]: -n, [other(from)]: n }),
-              `Moved ${bottles(n)} from ${from} to ${other(from)}.`,
-              () => adjustBottles(itemId, id, { [from]: n, [other(from)]: -n }),
-            )
-          }
+      {moving && (
+        <MoveSheet
+          wines={[wine]}
+          from={moving.from}
+          to={moving.place && moving.from ? { loc: moving.from.loc, spot: null } : undefined}
+          title={moving.place ? "Place bottles" : undefined}
+          onClose={() => setMoving(null)}
         />
       )}
 
       {dialog === "arrived" && (
-        <Modal title="Where did the bottles go?" onClose={() => setDialog(null)}>
-          <p className="muted">{locationLine(wine)}</p>
-          <div className="choice-list">
-            {LOCATIONS.map((l) => (
-              <button
-                key={l}
-                className="choice"
-                disabled={busy}
-                onClick={() => void act(() => markArrived(itemId, id, l), `Marked as arrived at ${l}.`)}
-              >
-                <strong>{l}</strong>
-              </button>
-            ))}
-          </div>
-        </Modal>
+        <ArrivedDialog
+          wine={wine}
+          busy={busy}
+          onClose={() => setDialog(null)}
+          onSave={(l, chosen) =>
+            void act(async () => markArrived(itemId, id, l, await resolveSpot(chosen)), `Marked as arrived at ${l}.`)
+          }
+        />
       )}
     </>
   );
@@ -419,6 +462,7 @@ function TastingRow({ t }: { t: Tasting }) {
 }
 
 function OpenDialog({
+  wine,
   stocked,
   at,
   busy,
@@ -426,14 +470,16 @@ function OpenDialog({
   onClose,
   onOpen,
 }: {
+  wine: Wine;
   stocked: Location[];
   at: (l: Location) => number;
   busy: boolean;
   firstTime: boolean;
   onClose: () => void;
-  onOpen: (l: Location, date: string, occasion: string) => void;
+  onOpen: (l: Location, date: string, occasion: string, spot: string | null) => void;
 }) {
   const [from, setFrom] = useState<Location>(stocked.includes("Home") ? "Home" : stocked[0]);
+  const [spot, setSpot] = useState<string | null>(() => firstSpot(wine, from));
   const [date, setDate] = useState(todayIso());
   const [occasion, setOccasion] = useState("");
   return (
@@ -441,7 +487,14 @@ function OpenDialog({
       {stocked.length > 1 ? (
         <div className="seg">
           {stocked.map((l) => (
-            <button key={l} className={l === from ? "on" : ""} onClick={() => setFrom(l)}>
+            <button
+              key={l}
+              className={l === from ? "on" : ""}
+              onClick={() => {
+                setFrom(l);
+                setSpot(firstSpot(wine, l));
+              }}
+            >
               {l} ({at(l)})
             </button>
           ))}
@@ -449,6 +502,7 @@ function OpenDialog({
       ) : (
         <p className="muted">From {from} ({bottles(at(from))})</p>
       )}
+      <FromSpot w={wine} loc={from} value={spot} onChange={setSpot} />
       <label className="field">
         <span>Date</span>
         <input type="date" value={date} max={todayIso()} onChange={(e) => setDate(e.target.value || todayIso())} />
@@ -466,7 +520,7 @@ function OpenDialog({
         <p className="muted small">This first bottle also adds an "Opened" sheet to your workbook to keep the history.</p>
       )}
       <div className="actions">
-        <button className="primary" disabled={busy} onClick={() => onOpen(from, date, occasion)}>
+        <button className="primary" disabled={busy} onClick={() => onOpen(from, date, occasion, spot)}>
           {busy ? "Saving…" : `🍷 Open from ${from}`}
         </button>
       </div>
@@ -500,9 +554,10 @@ function SellDialog({
   firstTime: boolean;
   lastBought: number | null;
   onClose: () => void;
-  onSell: (l: Location, d: SaleDetails) => void;
+  onSell: (l: Location, d: SaleDetails, spot: string | null) => void;
 }) {
   const [from, setFrom] = useState<Location>(stocked.includes("K Cellars") ? "K Cellars" : stocked[0]);
+  const [spot, setSpot] = useState<string | null>(() => firstSpot(wine, from));
   const [n, setN] = useState(1);
   const [sale, setSale] = useState("");
   const [bought, setBought] = useState(wine.price !== null ? String(wine.price) : "");
@@ -530,7 +585,7 @@ function SellDialog({
   const submit = () => {
     setTried(true);
     if (salePrice === null || !yearOk || tooLate) return;
-    onSell(from, { bottles: count, date, salePrice, boughtPrice, boughtYear, buyer, notes });
+    onSell(from, { bottles: count, date, salePrice, boughtPrice, boughtYear, buyer, notes }, spot);
   };
 
   return (
@@ -543,6 +598,7 @@ function SellDialog({
               className={l === from ? "on" : ""}
               onClick={() => {
                 setFrom(l);
+                setSpot(firstSpot(wine, l));
                 setN(1);
               }}
             >
@@ -553,6 +609,7 @@ function SellDialog({
       ) : (
         <p className="muted">From {from} ({bottles(max)})</p>
       )}
+      <FromSpot w={wine} loc={from} value={spot} onChange={setSpot} />
       {max > 1 && <Stepper value={count} min={1} max={max} onChange={setN} />}
       <div className="row-2">
         <label className="field">
@@ -633,19 +690,30 @@ export function formatDay(iso: string | null): string {
   return d.toLocaleDateString("en-SG", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
 }
 
-function AddDialog({ busy, onClose, onSave }: { busy: boolean; onClose: () => void; onSave: (l: Location, n: number) => void }) {
+function AddDialog({ busy, onClose, onSave }: { busy: boolean; onClose: () => void; onSave: (l: Location, n: number, spot: string | null) => void }) {
   const [loc, setLoc] = useState<Location>("K Cellars");
+  const [spot, setSpot] = useState<string | null>(null);
   const [n, setN] = useState(1);
   return (
     <Modal title="Add bottles" onClose={onClose}>
       <div className="seg">
         {LOCATIONS.map((l) => (
-          <button key={l} className={l === loc ? "on" : ""} onClick={() => setLoc(l)}>{l}</button>
+          <button
+            key={l}
+            className={l === loc ? "on" : ""}
+            onClick={() => {
+              setLoc(l);
+              setSpot(null);
+            }}
+          >
+            {l}
+          </button>
         ))}
       </div>
       <Stepper value={n} min={1} max={48} onChange={setN} />
+      <SpotSelect loc={loc} value={spot} onChange={setSpot} />
       <div className="actions">
-        <button className="primary" disabled={busy} onClick={() => onSave(loc, n)}>
+        <button className="primary" disabled={busy} onClick={() => onSave(loc, n, spot)}>
           {busy ? "Saving…" : `Add ${bottles(n)} at ${loc}`}
         </button>
       </div>
@@ -653,42 +721,32 @@ function AddDialog({ busy, onClose, onSave }: { busy: boolean; onClose: () => vo
   );
 }
 
-function MoveDialog({
-  wine,
-  busy,
-  onClose,
-  onSave,
-}: {
-  wine: Wine;
-  busy: boolean;
-  onClose: () => void;
-  onSave: (from: Location, n: number) => void;
-}) {
-  const at = (l: Location) => (l === "Home" ? wine.home ?? 0 : wine.kc ?? 0);
-  const [from, setFrom] = useState<Location>(at("K Cellars") > 0 ? "K Cellars" : "Home");
-  const [n, setN] = useState(1);
-  const max = at(from);
+function ArrivedDialog({
+  wine, busy, onClose, onSave,
+}: { wine: Wine; busy: boolean; onClose: () => void; onSave: (l: Location, spot: string | null) => void }) {
+  const [loc, setLoc] = useState<Location>((wine.kc ?? 0) > 0 ? "K Cellars" : "Home");
+  const [spot, setSpot] = useState<string | null>(null);
   return (
-    <Modal title="Move bottles" onClose={onClose}>
+    <Modal title="Where did the bottles go?" onClose={onClose}>
+      <p className="muted">{locationLine(wine)}</p>
       <div className="seg">
         {LOCATIONS.map((l) => (
           <button
             key={l}
-            className={l === from ? "on" : ""}
-            disabled={at(l) === 0}
+            className={l === loc ? "on" : ""}
             onClick={() => {
-              setFrom(l);
-              setN(1);
+              setLoc(l);
+              setSpot(null);
             }}
           >
-            From {l} ({at(l)})
+            {l}
           </button>
         ))}
       </div>
-      <Stepper value={Math.min(n, max)} min={1} max={max} onChange={setN} />
+      <SpotSelect loc={loc} value={spot} onChange={setSpot} />
       <div className="actions">
-        <button className="primary" disabled={busy || max === 0} onClick={() => onSave(from, Math.min(n, max))}>
-          {busy ? "Saving…" : `Move ${bottles(Math.min(n, max))} → ${other(from)}`}
+        <button className="primary" disabled={busy} onClick={() => onSave(loc, spot)}>
+          {busy ? "Saving…" : `✓ Arrived at ${loc}${spot && spot !== NEW_LOOSE ? ` · ${spot}` : ""}`}
         </button>
       </div>
     </Modal>

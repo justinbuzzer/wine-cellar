@@ -8,7 +8,7 @@ import { withSession, type TableSnapshot, type Workbook } from "./graph";
 import { COL_HOME, COL_KC, LOCATION_COLUMN, type Location } from "./locations";
 import { excelSerial } from "./notesmodel";
 import { HISTORY_COLUMNS, toOpening, type Opening } from "./historymodel";
-import { result } from "./inventory";
+import { countCells, result } from "./inventory";
 import { appendLog, readLog, removeLog, type LogSpec } from "./logtable";
 import { locateById, setCells, type Located } from "./tableops";
 
@@ -53,20 +53,20 @@ export async function locateWine(wb: Workbook, wineId: string): Promise<Located>
   return at;
 }
 
-/** Takes `n` bottles off `from` (fails if there aren't enough there). */
-export async function takeBottles(wb: Workbook, at: Located, from: Location, n: number): Promise<Wine> {
+/** Takes `n` bottles off `from` (fails if there aren't enough there), out of box/rack `spot` if given. */
+export async function takeBottles(wb: Workbook, at: Located, from: Location, n: number, spot: string | null = null): Promise<Wine> {
   const col = LOCATION_COLUMN[from];
   const current = count(at.row[at.col(col)]);
   if (current < n) throw new Error(n === 1 ? `There are no bottles at ${from}.` : `There are only ${current} bottles at ${from}.`);
-  await setCells(wb, at, { [col]: current - n });
+  await setCells(wb, at, countCells(at, from, current - n, { from: spot }));
   return result(at);
 }
 
-/** Puts `n` bottles back at `to`. */
-export async function returnBottles(wb: Workbook, wineId: string, to: Location, n: number): Promise<Wine> {
+/** Puts `n` bottles back at `to` (into box/rack `spot` if given). */
+export async function returnBottles(wb: Workbook, wineId: string, to: Location, n: number, spot: string | null = null): Promise<Wine> {
   const at = locateById(await wb.readTable(config.tables.inventory), "WineID", wineId, "Wine");
   const col = LOCATION_COLUMN[to];
-  await setCells(wb, at, { [col]: count(at.row[at.col(col)]) + n });
+  await setCells(wb, at, countCells(at, to, count(at.row[at.col(col)]) + n, { to: spot }));
   return result(at);
 }
 
@@ -82,10 +82,10 @@ export function openBottle(
   itemId: string,
   wineId: string,
   from: Location,
-  opts: { date: string; occasion: string },
+  opts: { date: string; occasion: string; spot?: string | null },
 ): Promise<OpenResult> {
   return withSession(itemId, async (wb) => {
-    const wine = await takeBottles(wb, await locateWine(wb, wineId), from, 1);
+    const wine = await takeBottles(wb, await locateWine(wb, wineId), from, 1, opts.spot ?? null);
     try {
       return { wine, opening: await logOpening(wb, wine, from, opts.date, opts.occasion), logError: null };
     } catch (e) {
@@ -95,9 +95,9 @@ export function openBottle(
 }
 
 /** Undo: puts the bottle back and removes its history row. */
-export function undoOpen(itemId: string, wineId: string, from: Location, openId: string | null): Promise<Wine> {
+export function undoOpen(itemId: string, wineId: string, from: Location, openId: string | null, spot: string | null = null): Promise<Wine> {
   return withSession(itemId, async (wb) => {
-    const wine = await returnBottles(wb, wineId, from, 1);
+    const wine = await returnBottles(wb, wineId, from, 1, spot);
     if (openId) await removeLog(wb, OPENED_SPEC, openId);
     return wine;
   });

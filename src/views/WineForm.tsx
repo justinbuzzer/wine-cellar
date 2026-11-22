@@ -5,6 +5,7 @@ import { addWine, adjustBottles, updateWine } from "../inventory";
 import { go, href } from "../router";
 import { describeError, useWorkbook } from "../store";
 import { bottles, useToast } from "../ui";
+import { SpotSelect, useResolveSpot } from "./SpotPicker";
 import { locationLine } from "./Cellar";
 
 interface FormState {
@@ -101,6 +102,9 @@ export default function WineForm({ id }: { id?: string }) {
   const [f, setF] = useState<FormState>(() => fromWine(original));
   const [errors, setErrors] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
+  /** Box / rack for a new wine's bottles. */
+  const [spots, setSpots] = useState<{ kc: string | null; home: string | null }>({ kc: null, home: null });
+  const resolveSpot = useResolveSpot();
   const set = (k: keyof FormState) => (e: { target: { value: string } }) => setF((p) => ({ ...p, [k]: e.target.value }));
 
   // Suggestions from what's already in your spreadsheet keep spellings consistent.
@@ -133,7 +137,8 @@ export default function WineForm({ id }: { id?: string }) {
     }
     setBusy(true);
     try {
-      const updated = await adjustBottles(data.file.id, w.wineId!, { "K Cellars": kc, Home: home });
+      const s = f.status === "NYA" ? { kc: null, home: null } : { kc: await resolveSpot(spots.kc), home: await resolveSpot(spots.home) };
+      const updated = await adjustBottles(data.file.id, w.wineId!, { "K Cellars": kc, Home: home }, { "K Cellars": { to: s.kc }, Home: { to: s.home } });
       putWine(updated);
       toast({ text: `Added ${bottles(kc + home)} to ${w.wineId}.` });
       go(`wine/${w.wineId}`);
@@ -169,7 +174,12 @@ export default function WineForm({ id }: { id?: string }) {
     setBusy(true);
     try {
       const w = adding
-        ? await addWine(data.file.id, cells, { kc: Number(f.kc), home: Number(f.home) })
+        ? await addWine(
+            data.file.id,
+            cells,
+            { kc: Number(f.kc), home: Number(f.home) },
+            f.status === "NYA" ? {} : { kc: await resolveSpot(spots.kc), home: await resolveSpot(spots.home) },
+          )
         : await updateWine(data.file.id, id!, cells);
       putWine(w);
       toast({ text: adding ? `Added ${w.name} (${w.wineId}).` : "Saved." });
@@ -272,6 +282,12 @@ export default function WineForm({ id }: { id?: string }) {
             <Field label="Bottles at Home">
               <input value={f.home} onChange={set("home")} inputMode="numeric" />
             </Field>
+          </div>
+        )}
+        {adding && f.status !== "NYA" && (
+          <div className="row-2">
+            {Number(f.kc) > 0 ? <SpotSelect loc="K Cellars" value={spots.kc} onChange={(kc) => setSpots({ ...spots, kc })} /> : <span />}
+            {Number(f.home) > 0 && <SpotSelect loc="Home" value={spots.home} onChange={(home) => setSpots({ ...spots, home })} />}
           </div>
         )}
         {!adding && <p className="muted small">Bottle counts are changed from the wine's page (Open, Add, Move).</p>}

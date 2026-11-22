@@ -45,9 +45,9 @@ export interface SellResult {
   logError: unknown;
 }
 
-export function sellBottles(itemId: string, wineId: string, from: Location, d: SaleDetails): Promise<SellResult> {
+export function sellBottles(itemId: string, wineId: string, from: Location, d: SaleDetails, spot: string | null = null): Promise<SellResult> {
   return withSession(itemId, async (wb) => {
-    const wine = await takeBottles(wb, await locateWine(wb, wineId), from, d.bottles);
+    const wine = await takeBottles(wb, await locateWine(wb, wineId), from, d.bottles, spot);
     const values: Record<string, Cell> = {
       "Date Sold": excelSerial(d.date),
       WineID: wine.wineId,
@@ -72,9 +72,9 @@ export function sellBottles(itemId: string, wineId: string, from: Location, d: S
 }
 
 /** Undo: puts the bottles back and removes the sale. */
-export function undoSale(itemId: string, wineId: string, from: Location, bottles: number, saleId: string | null): Promise<Wine> {
+export function undoSale(itemId: string, wineId: string, from: Location, bottles: number, saleId: string | null, spot: string | null = null): Promise<Wine> {
   return withSession(itemId, async (wb) => {
-    const wine = await returnBottles(wb, wineId, from, bottles);
+    const wine = await returnBottles(wb, wineId, from, bottles, spot);
     if (saleId) await removeLog(wb, SOLD_SPEC, saleId);
     return wine;
   });

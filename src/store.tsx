@@ -22,6 +22,8 @@ import { toOpening, type Opening } from "./historymodel";
 import { readSales } from "./sales";
 import { toSale, type Sale } from "./salesmodel";
 import { readDrafts, toDraft, type Draft } from "./drafts";
+import { readSettings, SETTINGS_TABLE } from "./settings";
+import { layoutFromRows, type Layout } from "./spots";
 
 export interface WorkbookData {
   file: DriveItem;
@@ -46,6 +48,8 @@ export interface WorkbookData {
   hasSales: boolean;
   /** Unfinished tasting notes (the "Drafts" table; empty until the first draft). */
   drafts: Draft[];
+  /** K Cellars boxes and Home racks (Settings page; empty until set up). */
+  layout: Layout;
 }
 
 export function describeError(e: unknown): string {
@@ -67,12 +71,13 @@ export function describeError(e: unknown): string {
 export async function loadWorkbook(file: DriveItem): Promise<WorkbookData> {
   const wb = Workbook.reader(file.id);
   const start = performance.now();
-  const [inv, tas, hist, sold, drafts, ...lists] = await Promise.all([
+  const [inv, tas, hist, sold, drafts, settings, ...lists] = await Promise.all([
     timed(() => wb.readTable(config.tables.inventory)),
     timed(() => wb.readTable(config.tables.tastings)),
     timed(() => readHistory(wb)),
     timed(() => readSales(wb)),
     timed(() => readDrafts(wb)),
+    timed(() => readSettings(wb)),
     ...config.lists.map((n) => timed(() => wb.readNamedList(n))),
   ]);
   const invTable = toTable(inv.value.values);
@@ -85,6 +90,7 @@ export async function loadWorkbook(file: DriveItem): Promise<WorkbookData> {
     sales: rowsOf(sold.value).map(toSale),
     hasSales: sold.value !== null,
     drafts: rowsOf(drafts.value).map(toDraft).filter((d) => d.draftId),
+    layout: layoutFromRows(rowsOf(settings.value)),
     file,
     wines: invTable.rows.map(toWine),
     tastings: tasTable.rows.map(toTasting),
@@ -97,6 +103,7 @@ export async function loadWorkbook(file: DriveItem): Promise<WorkbookData> {
       { label: `Table "${config.tables.history}"${hist.value ? "" : " (not created yet)"}`, ms: hist.ms },
       { label: `Table "${config.tables.sales}"${sold.value ? "" : " (not created yet)"}`, ms: sold.ms },
       { label: `Table "${config.tables.drafts}"${drafts.value ? "" : " (not created yet)"}`, ms: drafts.ms },
+      { label: `Table "${SETTINGS_TABLE}"${settings.value ? "" : " (not created yet)"}`, ms: settings.ms },
       { label: `${config.lists.length} dropdown lists (slowest)`, ms: Math.max(...lists.map((l) => l.ms)) },
     ],
     totalMs: Math.round(performance.now() - start),
@@ -119,6 +126,7 @@ interface Store {
   removeSale(saleId: string): void;
   putDraft(d: Draft): void;
   removeDraft(draftId: string): void;
+  putLayout(l: Layout): void;
   changeFile(): void;
 }
 
@@ -145,7 +153,7 @@ type Sync =
   | { state: "failed"; savedAt: number; message: string };
 
 /** Bump when WorkbookData changes shape, so an old offline copy is ignored. */
-const SNAPSHOT_VERSION = 3;
+const SNAPSHOT_VERSION = 4;
 
 function snapshotKey(): string {
   return `v${SNAPSHOT_VERSION}:${import.meta.env.MODE}:${msal.getActiveAccount()?.homeAccountId ?? "none"}`;
@@ -347,6 +355,7 @@ export function WorkbookGate({ children }: { children: ReactNode }) {
       setPhase((p) =>
         p.kind !== "loaded" ? p : { kind: "loaded", data: { ...p.data, drafts: p.data.drafts.filter((x) => x.draftId !== id) } },
       ),
+    putLayout: (l) => setPhase((p) => (p.kind !== "loaded" ? p : { kind: "loaded", data: { ...p.data, layout: l } })),
     changeFile: () => {
       storeItemId(null);
       void search();

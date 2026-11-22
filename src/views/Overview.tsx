@@ -82,7 +82,10 @@ export default function Overview() {
 
       <div className="ov-grid">
         <section className="card">
-          <h2>Where</h2>
+          <div className="card-head">
+            <h2>Where</h2>
+            <button className="primary icon-btn" onClick={() => go("storage")} aria-label="Boxes and racks" title="Boxes and racks">📦</button>
+          </div>
           <Bars
             bars={where}
             unit="bottle"

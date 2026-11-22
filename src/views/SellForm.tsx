@@ -8,6 +8,7 @@ import { sellBottles, undoSale } from "../sales";
 import { formatPct, lastBoughtYear, saleMoney, type Sale } from "../salesmodel";
 import { describeError, useWorkbook } from "../store";
 import { bottles, Stepper, TypeDot, useToast } from "../ui";
+import { placementOf, spotName } from "../spots";
 
 // Selling several wines in one go: one line per wine (where from, how many,
 // price per bottle), with the date, buyer and notes shared by the whole order.
@@ -18,6 +19,8 @@ interface Line {
   key: string;
   wineId: string;
   from: Location;
+  /** Box or rack to take them from first (null = not placed / no choice). */
+  spot?: string | null;
   bottles: number;
   /** Sold for, per bottle. */
   price: string;
@@ -167,7 +170,7 @@ export default function SellForm({ preselect }: { preselect?: string }) {
       return;
     }
     setBusy(true);
-    const sold: { wineId: string; from: Location; bottles: number; saleId: string | null }[] = [];
+    const sold: { wineId: string; from: Location; spot: string | null; bottles: number; saleId: string | null }[] = [];
     let failed = 0;
     for (const l of pending) {
       setLine(l.key, { state: "saving", message: undefined });
@@ -180,11 +183,11 @@ export default function SellForm({ preselect }: { preselect?: string }) {
           boughtYear: yearOf(l.year),
           buyer: shared.buyer,
           notes: shared.notes,
-        });
+        }, lineSpot(wineById.get(l.wineId), l.from, l.spot));
         putWine(res.wine);
         if (res.sale) putSale(res.sale);
         const saleId = res.sale?.saleId ?? null;
-        sold.push({ wineId: l.wineId, from: l.from, bottles: l.bottles, saleId });
+        sold.push({ wineId: l.wineId, from: l.from, spot: lineSpot(wineById.get(l.wineId), l.from, l.spot), bottles: l.bottles, saleId });
         setLine(l.key, {
           state: "saved",
           saleId,
@@ -211,7 +214,7 @@ export default function SellForm({ preselect }: { preselect?: string }) {
         run: async () => {
           try {
             for (const x of sold) {
-              putWine(await undoSale(data.file.id, x.wineId, x.from, x.bottles, x.saleId));
+              putWine(await undoSale(data.file.id, x.wineId, x.from, x.bottles, x.saleId, x.spot));
               if (x.saleId) removeSale(x.saleId);
             }
             toast({ text: "Sale undone: the bottles are back." });
@@ -350,7 +353,7 @@ function SellLine({
                   type="button"
                   disabled={locked}
                   className={l === line.from ? "on" : ""}
-                  onClick={() => onChange({ from: l, bottles: Math.min(line.bottles, Math.max(1, stock(wine, l))) })}
+                  onClick={() => onChange({ from: l, spot: null, bottles: Math.min(line.bottles, Math.max(1, stock(wine, l))) })}
                 >
                   {l} ({stock(wine, l)})
                 </button>
@@ -359,6 +362,7 @@ function SellLine({
           ) : (
             <p className="muted small">From {line.from} ({bottles(stock(wine, line.from))})</p>
           )}
+          {wine && <LineSpot wine={wine} loc={line.from} value={line.spot ?? null} disabled={locked} onChange={(spot) => onChange({ spot })} />}
           <div className="row-2 line-qty">
             <Label text="Bottles">
               <Stepper value={Math.min(line.bottles, max)} min={1} max={max} onChange={(n) => onChange({ bottles: n })} />
@@ -435,5 +439,36 @@ function Label({ text, children }: { text: string; children: ReactNode }) {
       <span>{text}</span>
       {children}
     </div>
+  );
+}
+
+function spotOptions(wine: Wine, loc: Location): (string | null)[] {
+  const p = placementOf(wine, loc);
+  return [...p.spots.map((s) => s.spot), ...(p.unplaced > 0 ? [null] : [])];
+}
+
+/** The spot a line takes bottles from first: the one chosen, else the first listed. */
+function lineSpot(wine: Wine | undefined, loc: Location, value: string | null | undefined): string | null {
+  if (!wine) return null;
+  const xs = spotOptions(wine, loc);
+  return value !== undefined && xs.includes(value) ? value : xs[0] ?? null;
+}
+
+/** "From which box?" when the bottles at this location are in more than one spot. */
+function LineSpot({ wine, loc, value, disabled, onChange }: { wine: Wine; loc: Location; value: string | null; disabled: boolean; onChange: (s: string | null) => void }) {
+  const p = placementOf(wine, loc);
+  const xs = spotOptions(wine, loc);
+  if (xs.length < 2) return null;
+  const current = lineSpot(wine, loc, value);
+  return (
+    <Label text={`From which ${loc === "Home" ? "rack" : "box"} first`}>
+      <select value={current ?? ""} disabled={disabled} onChange={(e) => onChange(e.target.value || null)}>
+        {xs.map((s) => (
+          <option key={s ?? ""} value={s ?? ""}>
+            {spotName(s)} ({s === null ? p.unplaced : p.spots.find((x) => x.spot === s)?.n})
+          </option>
+        ))}
+      </select>
+    </Label>
   );
 }

@@ -9,11 +9,44 @@ import { COL_HOME, COL_KC, LOCATION_COLUMN, QTY_FORMULA, type Location } from ".
 import { appendRow, locateById, nextId, setCells, type Located } from "./tableops";
 import { findQtyIssues, type QtyIssue } from "./bottlecheck";
 import { colLetter } from "./sheet";
+import { changeSpots, formatSpots, parseSpots, putIn, takeFrom, type Placement } from "./spots";
 
 const TABLE = config.tables.inventory;
 
+/** Which boxes / racks hold a location's bottles (see spots.ts). */
+export const SPOT_COLUMN: Record<Location, string> = { "K Cellars": "K Cellars Box", Home: "Home Rack" };
+
 /** Columns the app manages itself; edits never write these directly. */
-const PROTECTED = new Set(["WineID", "Qty", COL_KC, COL_HOME]);
+const PROTECTED = new Set(["WineID", "Qty", COL_KC, COL_HOME, SPOT_COLUMN["K Cellars"], SPOT_COLUMN.Home]);
+
+/** Adds the K Cellars Box / Home Rack columns at the end of Inventory if missing; returns a fresh read. */
+export async function withSpotColumns(wb: Workbook, snap: TableSnapshot): Promise<TableSnapshot> {
+  let s = snap;
+  for (const h of [SPOT_COLUMN["K Cellars"], SPOT_COLUMN.Home]) {
+    if (headersOf(s.values[0]).includes(h)) continue;
+    await wb.addTableColumn(TABLE, [[h], ...s.values.slice(1).map(() => [""])]);
+    s = await wb.readTable(TABLE);
+  }
+  return s;
+}
+
+/**
+ * Cells to write when a location's bottle count becomes `next`, with its spot list
+ * kept in step: bottles taken come out of `from` (else not-placed ones first),
+ * bottles added go into `to` (else they're not placed).
+ */
+export function countCells(at: Located, loc: Location, next: number, opts: { from?: string | null; to?: string | null } = {}): Record<string, Cell> {
+  const col = LOCATION_COLUMN[loc];
+  const before = count(at.row[at.col(col)]);
+  const cells: Record<string, Cell> = { [col]: next };
+  const sc = SPOT_COLUMN[loc];
+  if (at.headers.includes(sc)) {
+    const text = String(at.row[at.col(sc)] ?? "");
+    const updated = changeSpots(text, before, next, opts);
+    if (updated !== text) cells[sc] = updated;
+  }
+  return cells;
+}
 
 function requireLocations(headers: string[]) {
   if (!headers.includes(COL_KC) || !headers.includes(COL_HOME)) {
@@ -40,10 +73,20 @@ export function result(at: Located): Wine {
   return toWine(recordFrom(at.headers, at.row));
 }
 
-/** Add/remove bottles per location, e.g. { Home: -1 } or { "K Cellars": -2, Home: 2 }. */
-export function adjustBottles(itemId: string, wineId: string, delta: Partial<Record<Location, number>>): Promise<Wine> {
+/**
+ * Add/remove bottles per location, e.g. { Home: -1 }. `spots` says which box or
+ * rack added bottles go into / removed ones come out of (default: not placed).
+ */
+export function adjustBottles(
+  itemId: string,
+  wineId: string,
+  delta: Partial<Record<Location, number>>,
+  spots: Partial<Record<Location, { from?: string | null; to?: string | null }>> = {},
+): Promise<Wine> {
   return withSession(itemId, async (wb) => {
-    const at = locateById(await wb.readTable(TABLE), "WineID", wineId, "Wine");
+    let snap = await wb.readTable(TABLE);
+    if (Object.values(spots).some((s) => s?.to)) snap = await withSpotColumns(wb, snap);
+    const at = locateById(snap, "WineID", wineId, "Wine");
     requireLocations(at.headers);
     const changes: Record<string, Cell> = {};
     for (const [loc, d] of Object.entries(delta) as [Location, number][]) {
@@ -53,10 +96,58 @@ export function adjustBottles(itemId: string, wineId: string, delta: Partial<Rec
       if (next < 0) {
         throw new Error(`There ${current === 1 ? "is" : "are"} only ${current} bottle${current === 1 ? "" : "s"} at ${loc}.`);
       }
-      changes[colName] = next;
+      Object.assign(changes, countCells(at, loc, next, spots[loc]));
     }
     await setCells(wb, at, changes);
     return result(at);
+  });
+}
+
+export interface Move {
+  wineId: string;
+  from: { loc: Location; spot: string | null };
+  to: { loc: Location; spot: string | null };
+  n: number;
+}
+
+/**
+ * Moves bottles between spots and/or locations, several wines at once, in one
+ * workbook session. Between Home and K Cellars the bottle counts change too.
+ */
+export function moveBottles(itemId: string, moves: Move[]): Promise<Wine[]> {
+  return withSession(itemId, async (wb) => {
+    let snap = await wb.readTable(TABLE);
+    if (moves.some((m) => m.from.spot || m.to.spot)) snap = await withSpotColumns(wb, snap);
+    const ids = [...new Set(moves.map((m) => m.wineId))];
+    const out: Wine[] = [];
+    for (const wineId of ids) {
+      const at = locateById(snap, "WineID", wineId, "Wine");
+      requireLocations(at.headers);
+      const totals: Record<Location, number> = { "K Cellars": count(at.row[at.col(COL_KC)]), Home: count(at.row[at.col(COL_HOME)]) };
+      const spotCol = (loc: Location) => (at.headers.includes(SPOT_COLUMN[loc]) ? at.col(SPOT_COLUMN[loc]) : -1);
+      const places: Record<Location, Placement> = {
+        "K Cellars": parseSpots(spotCol("K Cellars") >= 0 ? at.row[spotCol("K Cellars")] : "", totals["K Cellars"]),
+        Home: parseSpots(spotCol("Home") >= 0 ? at.row[spotCol("Home")] : "", totals.Home),
+      };
+      for (const m of moves.filter((x) => x.wineId === wineId)) {
+        const p = places[m.from.loc];
+        const have = m.from.spot === null ? p.unplaced : p.spots.find((s) => s.spot === m.from.spot)?.n ?? 0;
+        if (have < m.n) {
+          throw new Error(`Only ${have} bottle${have === 1 ? "" : "s"} of ${wineId} in ${m.from.loc} · ${m.from.spot ?? "not placed"}. Reload and try again.`);
+        }
+        places[m.from.loc] = takeFrom(p, m.n, m.from.spot);
+        totals[m.from.loc] -= m.n;
+        places[m.to.loc] = putIn(places[m.to.loc], m.n, m.to.spot);
+        totals[m.to.loc] += m.n;
+      }
+      const changes: Record<string, Cell> = { [COL_KC]: totals["K Cellars"], [COL_HOME]: totals.Home };
+      for (const loc of ["K Cellars", "Home"] as Location[]) {
+        if (spotCol(loc) >= 0) changes[SPOT_COLUMN[loc]] = formatSpots(places[loc].spots, totals[loc]);
+      }
+      await setCells(wb, at, changes);
+      out.push(result(at));
+    }
+    return out;
   });
 }
 
@@ -70,18 +161,17 @@ export function receiveBottles(
   wineId: string,
   where: Location,
   bottles: number,
-  opts: { price?: number | null; notYetArrived?: boolean; yearPurchased?: number | null },
+  opts: { price?: number | null; notYetArrived?: boolean; yearPurchased?: number | null; spot?: string | null },
 ): Promise<{ wine: Wine; markedNya: boolean }> {
   return withSession(itemId, async (wb) => {
     let snap = await wb.readTable(TABLE);
     if (opts.yearPurchased) snap = await withYearColumn(wb, snap);
+    if (opts.spot) snap = await withSpotColumns(wb, snap);
     const at = locateById(snap, "WineID", wineId, "Wine");
     requireLocations(at.headers);
     const kc = count(at.row[at.col(COL_KC)]);
     const home = count(at.row[at.col(COL_HOME)]);
-    const changes: Record<string, Cell> = {
-      [LOCATION_COLUMN[where]]: (where === "Home" ? home : kc) + bottles,
-    };
+    const changes: Record<string, Cell> = countCells(at, where, (where === "Home" ? home : kc) + bottles, { to: opts.spot ?? null });
     if (opts.price !== undefined && opts.price !== null) changes["Price"] = opts.price;
     const markedNya = !!opts.notYetArrived && kc + home === 0;
     if (markedNya) changes["Status"] = "NYA";
@@ -92,15 +182,26 @@ export function receiveBottles(
   });
 }
 
-/** Clears "NYA". If the bottles went Home, moves them from K Cellars to Home. */
-export function markArrived(itemId: string, wineId: string, where: Location): Promise<Wine> {
+/**
+ * Clears "NYA". If the bottles went Home, moves them from K Cellars to Home.
+ * With a `spot`, the not-placed bottles there (the ones that just arrived) go into it.
+ */
+export function markArrived(itemId: string, wineId: string, where: Location, spot: string | null = null): Promise<Wine> {
   return withSession(itemId, async (wb) => {
-    const at = locateById(await wb.readTable(TABLE), "WineID", wineId, "Wine");
+    let snap = await wb.readTable(TABLE);
+    if (spot) snap = await withSpotColumns(wb, snap);
+    const at = locateById(snap, "WineID", wineId, "Wine");
     const changes: Record<string, Cell> = { Status: "" };
-    if (where === "Home" && at.headers.includes(COL_KC) && at.headers.includes(COL_HOME)) {
+    if (at.headers.includes(COL_KC) && at.headers.includes(COL_HOME)) {
       const kc = count(at.row[at.col(COL_KC)]);
-      changes[COL_KC] = 0;
-      changes[COL_HOME] = count(at.row[at.col(COL_HOME)]) + kc;
+      const home = count(at.row[at.col(COL_HOME)]);
+      if (where === "Home" && kc > 0) {
+        Object.assign(changes, countCells(at, "K Cellars", 0), countCells(at, "Home", home + kc, { to: spot }));
+      } else if (spot && at.headers.includes(SPOT_COLUMN[where])) {
+        const total = where === "Home" ? home : kc;
+        const p = parseSpots(at.row[at.col(SPOT_COLUMN[where])], total);
+        changes[SPOT_COLUMN[where]] = formatSpots(putIn({ ...p, unplaced: 0 }, p.unplaced, spot).spots, total);
+      }
     }
     await setCells(wb, at, changes);
     return result(at);
@@ -202,10 +303,12 @@ export function addWine(
   itemId: string,
   fields: Record<string, Cell>,
   bottles: { kc: number; home: number },
+  spots: { kc?: string | null; home?: string | null } = {},
 ): Promise<Wine> {
   return withSession(itemId, async (wb) => {
     let snap = await wb.readTable(TABLE);
     if (String(fields[COL_YEAR] ?? "") !== "") snap = await withYearColumn(wb, snap);
+    if ((spots.kc && bottles.kc > 0) || (spots.home && bottles.home > 0)) snap = await withSpotColumns(wb, snap);
     const headers = headersOf(snap.values[0]);
     const wineId = nextId(snap, "WineID", "W", 4);
     const hasLocations = headers.includes(COL_KC) && headers.includes(COL_HOME);
@@ -213,6 +316,8 @@ export function addWine(
     if (hasLocations) {
       values[COL_KC] = bottles.kc;
       values[COL_HOME] = bottles.home;
+      if (spots.kc && bottles.kc > 0) values[SPOT_COLUMN["K Cellars"]] = spots.kc;
+      if (spots.home && bottles.home > 0) values[SPOT_COLUMN.Home] = spots.home;
     } else {
       values["Qty"] = bottles.kc + bottles.home;
     }

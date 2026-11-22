@@ -17,6 +17,7 @@ import { config } from "./config";
 import { headersOf, toTable, toWine, type Cell, type Wine } from "./data";
 import { GraphError, withSession, Workbook, type TableSnapshot } from "./graph";
 import { OPENED_SPEC } from "./history";
+import { countCells } from "./inventory";
 import { LOCATION_COLUMN, type Location } from "./locations";
 import { appendLogs, readLog, removeLog, type LogSpec } from "./logtable";
 import { excelSerial } from "./notesmodel";
@@ -367,7 +368,8 @@ export function applyPlan(file: string, st: Stocktake, plan: Plan, onStep: (text
           skipped.push(`${p.label} at ${loc}: now ${now}, expected ${p.before[loc] ?? 0}; left as it is`);
           continue;
         }
-        changes[col] = target;
+        // Boxes/racks follow along: missing bottles come off the not-placed ones first.
+        Object.assign(changes, countCells(at, loc, target));
       }
       if (p.clearNya && at.headers.includes("Status") && isNya({ status: str(at.row[at.col("Status")]) })) changes["Status"] = "";
       if (Object.keys(changes).length) {
@@ -487,7 +489,7 @@ export function undoStocktake(file: string, id: string): Promise<UndoResult> {
         const after = n(r["After"]);
         const before = n(r["Before"]);
         if (after !== before) {
-          if (now === after) changes[col] = before;
+          if (now === after) Object.assign(changes, countCells(at, loc, before));
           else skipped.push(`${label} at ${loc}: changed since (now ${now}); left as it is`);
         }
       }

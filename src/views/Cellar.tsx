@@ -8,6 +8,7 @@ import { useWorkbook } from "../store";
 import { useStocktake } from "../stocktake";
 import { bottles, FilterHeader, restoreListPosition, TypeDot, useLongPress } from "../ui";
 import { sellable } from "./SellForm";
+import { MoveSheet } from "./SpotPicker";
 import { vintageBucket, vintageBuckets } from "../overview";
 import { spendOn } from "../spend";
 
@@ -143,6 +144,7 @@ export default function Cellar() {
   // Press and hold a wine to pick several to sell; unticking the last one ends it.
   const hold = useLongPress();
   const [picked, setPicked] = useState<Set<string> | null>(null);
+  const [moving, setMoving] = useState<Wine[] | null>(null);
   const toggle = (id: string) =>
     setPicked((p) => {
       const s = new Set(p);
@@ -328,12 +330,22 @@ export default function Cellar() {
             <strong>{picked.size}</strong> wine{picked.size === 1 ? "" : "s"} · {bottles(pickedBottles)} in stock
           </span>
           <button type="button" className="link" onClick={() => setPicked(null)}>Cancel</button>
+          <button type="button" onClick={() => setMoving(data.wines.filter((w) => picked.has(w.wineId ?? "")))}>⇄ Move</button>
           <button type="button" className="primary" onClick={() => go(`sell/${[...picked].join(",")}`)}>
             💰 Sell {picked.size} wine{picked.size === 1 ? "" : "s"}
           </button>
         </div>
       )}
-      {!picked && list.some(sellable) && <p className="muted small center-text">Press and hold a wine to pick several to sell.</p>}
+      {moving && (
+        <MoveSheet
+          wines={moving}
+          onClose={() => {
+            setMoving(null);
+            setPicked(null);
+          }}
+        />
+      )}
+      {!picked && list.some(sellable) && <p className="muted small center-text">Press and hold a wine to pick several to sell or move.</p>}
     </>
   );
 }

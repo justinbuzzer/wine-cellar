@@ -21,6 +21,8 @@ import Producers from "./views/Producers";
 import Research from "./views/Research";
 import Sales from "./views/Sales";
 import Stocktake from "./views/Stocktake";
+import Settings from "./views/Settings";
+import Storage from "./views/Storage";
 import { LogoProvider } from "./logos";
 
 export default function App({ account }: { account: AccountInfo | null }) {
@@ -67,7 +69,7 @@ const TABS = [
 function Shell({ account, tabs, children }: { account?: AccountInfo; tabs?: boolean; children: ReactNode }) {
   const route = useRoute();
   const section =
-    route[0] === "wine" || route[0] === "add" || route[0] === "edit" || route[0] === "purchase" || route[0] === "sell" || route[0] === "stocktake" || !route[0]
+    route[0] === "wine" || route[0] === "add" || route[0] === "edit" || route[0] === "purchase" || route[0] === "sell" || route[0] === "stocktake" || route[0] === "storage" || !route[0]
       ? "cellar"
       : route[0] === "note"
         ? "notes"
@@ -116,7 +118,7 @@ function Shell({ account, tabs, children }: { account?: AccountInfo; tabs?: bool
       {tabs && isListPage && <BackToTop />}
       {account && (
         <footer className="foot">
-          <a href={href("diagnostics")}>Diagnostics</a> <InstallButton />
+          <a href={href("settings")}>Settings</a> <a href={href("diagnostics")}>Diagnostics</a> <InstallButton />
         </footer>
       )}
     </div>
@@ -159,6 +161,10 @@ function Routes() {
       return <SellForm key={arg ?? "sell"} preselect={arg} />;
     case "stocktake":
       return <Stocktake key={`${arg ?? ""}-${sub ?? ""}`} step={arg} arg={sub} />;
+    case "settings":
+      return <Settings />;
+    case "storage":
+      return <Storage key={`${arg ?? ""}-${sub ?? ""}`} loc={arg} spot={sub} />;
     case "edit":
       return <WineForm key={`edit-${arg}`} id={arg} />;
     case "list":

@@ -8,6 +8,7 @@ import { GST_RATE, storedPrice, summarize } from "../purchase";
 import { go, href } from "../router";
 import { describeError, useWorkbook } from "../store";
 import { Stepper, TypeDot, useToast } from "../ui";
+import { SpotSelect, useResolveSpot } from "./SpotPicker";
 
 // ---- state ----------------------------------------------------------------------
 
@@ -46,6 +47,8 @@ interface Shared {
   beforeGst: boolean;
   /** Year bought; defaults to this year. (Optional so drafts saved before it existed still load.) */
   year?: string;
+  /** Box or rack the bottles go into (only once they've arrived). */
+  spot?: string | null;
 }
 
 const thisYear = () => String(new Date().getFullYear());
@@ -110,6 +113,7 @@ function validate(l: Line): string | null {
 export default function PurchaseForm() {
   const { data, putWine } = useWorkbook();
   const toast = useToast();
+  const resolveSpot = useResolveSpot();
   const [initial] = useState(() => loadDraft());
   const [shared, setShared] = useState<Shared>(initial?.shared ?? DEFAULT_SHARED);
   const [lines, setLines] = useState<Line[]>(initial?.lines?.length ? initial.lines : [blankLine()]);
@@ -166,6 +170,16 @@ export default function PurchaseForm() {
       return;
     }
     setBusy(true);
+    let spot: string | null = null;
+    try {
+      // A "new loose box" is created once, then used for every line (and any retry).
+      spot = shared.nya ? null : await resolveSpot(shared.spot ?? null);
+      if (spot !== (shared.spot ?? null)) setShared({ ...shared, spot });
+    } catch (e) {
+      setBusy(false);
+      toast({ text: describeError(e), error: true });
+      return;
+    }
     let saved = 0;
     let failed = 0;
     for (const line of lines) {
@@ -179,6 +193,7 @@ export default function PurchaseForm() {
             price: price !== null && price !== before?.price ? price : undefined,
             notYetArrived: shared.nya,
             yearPurchased: yearValue(shared),
+            spot,
           });
           putWine(wine);
           setLine(line.key, {
@@ -204,10 +219,12 @@ export default function PurchaseForm() {
             Remarks: f.remarks.trim(),
             "Year Purchased": yearValue(shared) ?? "",
           };
-          const wine = await addWine(data.file.id, cells, {
-            kc: shared.where === "K Cellars" ? line.bottles : 0,
-            home: shared.where === "Home" ? line.bottles : 0,
-          });
+          const wine = await addWine(
+            data.file.id,
+            cells,
+            { kc: shared.where === "K Cellars" ? line.bottles : 0, home: shared.where === "Home" ? line.bottles : 0 },
+            shared.where === "K Cellars" ? { kc: spot } : { home: spot },
+          );
           putWine(wine);
           setLine(line.key, { state: "saved", message: `Added as ${wine.wineId}` });
         }
@@ -254,10 +271,11 @@ export default function PurchaseForm() {
         <Label text="Bottles go to">
           <div className="seg">
             {LOCATIONS.map((l) => (
-              <button key={l} type="button" className={shared.where === l ? "on" : ""} onClick={() => setShared({ ...shared, where: l })}>{l}</button>
+              <button key={l} type="button" className={shared.where === l ? "on" : ""} onClick={() => setShared({ ...shared, where: l, spot: null })}>{l}</button>
             ))}
           </div>
         </Label>
+        {!shared.nya && <SpotSelect loc={shared.where} value={shared.spot ?? null} onChange={(spot) => setShared({ ...shared, spot })} />}
         <Label text="Year purchased">
           <input
             value={shared.year ?? thisYear()}

@@ -129,6 +129,9 @@ export interface Wine {
   loc: string | null;
   /** Year bought ("Year Purchased" column, filled in automatically for wines added in the app). */
   yearPurchased: number | null;
+  /** Which K Cellars boxes / Home racks hold the bottles, e.g. "A2 (2), B3 (1)" (see spots.ts). */
+  kcSpots: string | null;
+  homeSpots: string | null;
 }
 
 /** A plausible year (1900–2200), or null. */
@@ -163,6 +166,9 @@ export function toWine(r: Record<string, Cell>): Wine {
     home: COL_HOME in r ? count(r[COL_HOME]) : null,
     loc: str(r["Loc"]),
     yearPurchased: yearCell(r["Year Purchased"]),
+    // These columns are added the first time a bottle is put in a box or rack.
+    kcSpots: str(r["K Cellars Box"] ?? null),
+    homeSpots: str(r["Home Rack"] ?? null),
   };
 }
 
