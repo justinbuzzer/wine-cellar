@@ -5,7 +5,7 @@ import { LOCATIONS, type Location } from "../locations";
 import { ProducerLogo } from "../logos";
 import { forgetScroll, go, href } from "../router";
 import { useWorkbook } from "../store";
-import { bottles, restoreListPosition, TypeDot, useLongPress } from "../ui";
+import { bottles, FilterHeader, restoreListPosition, TypeDot, useLongPress } from "../ui";
 import { sellable } from "./SellForm";
 import { vintageBucket, vintageBuckets } from "../overview";
 import { spendOn } from "../spend";
@@ -135,8 +135,8 @@ export default function Cellar() {
     if (f.loc !== "all" && w.kc !== null && w.home !== null) return s + (f.loc === "Home" ? w.home : w.kc);
     return s + w.qty;
   }, 0);
-  const totalValue = list.reduce((s, w) => s + (w.price ?? 0) * Math.max(0, w.qty), 0);
   const filtered = JSON.stringify({ ...f, sort: "" }) !== JSON.stringify({ ...DEFAULTS, sort: "" });
+  const activeFilters = (["status", "loc", "type", "country", "region", "vintage", "source"] as const).filter((k) => f[k] !== DEFAULTS[k]).length;
 
   // Press and hold a wine to pick several to sell; unticking the last one ends it.
   const hold = useLongPress();
@@ -166,15 +166,29 @@ export default function Cellar() {
         </div>
       )}
 
-      <div className="toolbar">
-        <input
-          className="search"
-          type="search"
-          placeholder="Search producer, wine, region, grape…"
-          value={f.q}
-          onChange={(e) => update({ q: e.target.value })}
-        />
-        <div className="filters">
+      <FilterHeader
+        id="cellar"
+        watch={JSON.stringify(f)}
+        q={f.q}
+        onQ={(q) => update({ q })}
+        placeholder="Search…"
+        active={activeFilters}
+        onClear={filtered ? () => update({ ...DEFAULTS, sort: f.sort }) : undefined}
+        summary={
+          <>
+            <strong>{list.length.toLocaleString()}</strong> wine{list.length === 1 ? "" : "s"}
+            <br />
+            <strong>{totalBottles.toLocaleString()}</strong> btl
+          </>
+        }
+        actions={
+          <>
+            <button className="primary icon-btn" onClick={() => go("sell")} aria-label="Sell" title="Sell">💰</button>
+            <button className="primary icon-btn" onClick={() => go("add")} aria-label="Add wine" title="Add wine">+🍷</button>
+            <button className="primary icon-btn" onClick={() => go("purchase")} aria-label="Add purchase" title="Add purchase">+🧾</button>
+          </>
+        }
+      >
           <select value={f.status} onChange={(e) => update({ status: e.target.value as StatusFilter })} aria-label="Status">
             <option value="current">Current wines</option>
             <option value="cellar">In cellar</option>
@@ -227,27 +241,7 @@ export default function Cellar() {
             <option value="price">Sort: Price (highest)</option>
             <option value="qty">Sort: Bottles (most)</option>
           </select>
-        </div>
-      </div>
-
-      <div className="summary">
-        <span>
-          <strong>{list.length.toLocaleString()}</strong> wines · <strong>{totalBottles.toLocaleString()}</strong> bottles
-          {totalValue > 0 && <> · {formatPrice(Math.round(totalValue), config.currency)}</>}
-        </span>
-        <span className="summary-actions">
-          {filtered && (
-            <button className="link" onClick={() => update({ ...DEFAULTS, sort: f.sort })}>Clear filters</button>
-          )}
-          <button className="primary small" onClick={() => go("sell")}>💰 Sell</button>
-          <button className="primary small" onClick={() => go("add")} aria-label="Add wine" title="Add wine">
-            + 🍷
-          </button>
-          <button className="primary small" onClick={() => go("purchase")} aria-label="Add purchase" title="Add purchase">
-            + 🧾
-          </button>
-        </span>
-      </div>
+      </FilterHeader>
 
       {spent && (
         <div className="card spend-card">

@@ -6,7 +6,7 @@ import { describeError, useWorkbook } from "../store";
 import { deleteDrafts, formatSaved, newestDrafts, type Draft } from "../drafts";
 import { labelReaderOn } from "../label";
 import Reveal from "./Reveal";
-import { restoreListPosition, TypeDot, useLongPress, useToast } from "../ui";
+import { FilterHeader, restoreListPosition, TypeDot, useLongPress, useToast } from "../ui";
 
 // Kept outside the component so the search survives opening a note and coming back.
 let saved: NoteQuery = EMPTY_QUERY;
@@ -34,9 +34,6 @@ export default function Notes() {
   const { data } = useWorkbook();
   const [f, setF] = useState<NoteQuery>(saved);
   const [shown, setShown] = useState(savedShown);
-  const [showFilters, setShowFilters] = useState(
-    () => JSON.stringify({ ...saved, q: "", sort: "" }) !== JSON.stringify({ ...EMPTY_QUERY, q: "", sort: "" }),
-  );
   const update = (p: Partial<NoteQuery>) => {
     setF((prev) => (saved = { ...prev, ...p }));
     setShown((savedShown = PAGE));
@@ -59,34 +56,36 @@ export default function Notes() {
   const results = useMemo(() => searchNotes(all, f), [all, f]);
   const words = tokens(f.q);
   const filtersActive = JSON.stringify({ ...f, q: "", sort: "" }) !== JSON.stringify({ ...EMPTY_QUERY, q: "", sort: "" });
-  const scored = results.filter((t) => t.score !== null);
+  const activeFilters = (Object.keys(EMPTY_QUERY) as (keyof NoteQuery)[]).filter(
+    (k) => k !== "q" && k !== "sort" && f[k] !== EMPTY_QUERY[k],
+  ).length;
+  const scored =results.filter((t) => t.score !== null);
   const avg = scored.length ? scored.reduce((s, t) => s + (t.score ?? 0), 0) / scored.length : null;
 
   return (
     <>
-      <div className="toolbar">
-        <div className="search-row">
-          <input
-            className="search"
-            type="search"
-            placeholder="Search notes: wine, aroma, region, who…"
-            value={f.q}
-            onChange={(e) => update({ q: e.target.value })}
-          />
-          <button className="primary" onClick={() => go("note/new")}>✍ New</button>
-        </div>
-        <div className="filter-bar">
-          <button className={filtersActive ? "on" : ""} onClick={() => setShowFilters((v) => !v)}>
-            Filters{filtersActive ? " •" : ""}
-          </button>
-          <select value={f.sort} onChange={(e) => update({ sort: e.target.value as NoteSort })} aria-label="Sort">
-            <option value="newest">Newest first</option>
-            <option value="score">Highest score</option>
-            <option value="name">Wine name</option>
-          </select>
-        </div>
-        {showFilters && (
-          <div className="filters">
+      <FilterHeader
+        id="notes"
+        watch={JSON.stringify(f)}
+        q={f.q}
+        onQ={(q) => update({ q })}
+        placeholder="Search…"
+        active={activeFilters}
+        onClear={filtersActive ? () => update({ ...EMPTY_QUERY, q: f.q, sort: f.sort }) : undefined}
+        summary={
+          <>
+            {results.length === all.length ? (
+              <><strong>{all.length.toLocaleString()}</strong> note{all.length === 1 ? "" : "s"}</>
+            ) : (
+              <><strong>{results.length.toLocaleString()}</strong> of {all.length.toLocaleString()}</>
+            )}
+            {avg !== null && <><br />avg <strong>{avg.toFixed(1)}</strong></>}
+          </>
+        }
+        actions={
+          <button className="primary icon-btn" onClick={() => go("note/new")} aria-label="New note" title="New note">+✍</button>
+        }
+      >
             <select value={f.type} onChange={(e) => update({ type: e.target.value })} aria-label="Type">
               <option value="">All types</option>
               {types.map((t) => <option key={t}>{t}</option>)}
@@ -128,22 +127,14 @@ export default function Notes() {
             />
             <datalist id="dl-notes-varietal">{varietals.map((v) => <option key={v} value={v} />)}</datalist>
             <datalist id="dl-notes-source">{sources.map((v) => <option key={v} value={v} />)}</datalist>
-          </div>
-        )}
-      </div>
+            <select value={f.sort} onChange={(e) => update({ sort: e.target.value as NoteSort })} aria-label="Sort">
+              <option value="newest">Sort: Newest first</option>
+              <option value="score">Sort: Highest score</option>
+              <option value="name">Sort: Wine name</option>
+            </select>
+      </FilterHeader>
 
       <DraftsBox drafts={data.drafts} />
-
-      <div className="summary">
-        <span>
-          <strong>{results.length.toLocaleString()}</strong>
-          {results.length === all.length ? " tasting notes" : ` of ${all.length.toLocaleString()} notes`}
-          {avg !== null && <span className="muted"> · average {avg.toFixed(1)}</span>}
-        </span>
-        {(filtersActive || f.q) && (
-          <button className="link" onClick={() => update({ ...EMPTY_QUERY, sort: f.sort })}>Clear</button>
-        )}
-      </div>
 
       {results.length === 0 ? (
         <p className="muted center-text">No notes match.</p>

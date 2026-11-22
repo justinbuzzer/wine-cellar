@@ -228,6 +228,89 @@ export function ThemeToggle() {
   );
 }
 
+// Whether each page's filter panel is open, kept while you move around the app.
+const panelOpen: Record<string, boolean> = {};
+
+/**
+ * The one-row header shared by Cellar and Notes: search, a ▾ that opens the
+ * filters (with a count of filters in use), a short summary and the buttons.
+ */
+export function FilterHeader({
+  id, q, onQ, placeholder, active, summary, actions, onClear, watch, children,
+}: {
+  id: string;
+  /** Changes whenever the search, filters or sort change. */
+  watch: string;
+  q: string;
+  onQ: (q: string) => void;
+  placeholder: string;
+  /** How many filters are in use (search and sort aren't counted). */
+  active: number;
+  summary: ReactNode;
+  actions: ReactNode;
+  /** Shown as "Clear filters" in the panel when something is set. */
+  onClear?: () => void;
+  children: ReactNode;
+}) {
+  const [open, setOpen] = useState(panelOpen[id] ?? false);
+  const toggle = () => setOpen((o) => (panelOpen[id] = !o));
+  // A hairline under the header once the list is scrolling beneath it.
+  const ref = useRef<HTMLDivElement>(null);
+  const [stuck, setStuck] = useState(false);
+  useEffect(() => {
+    const onScroll = () => {
+      const el = ref.current;
+      setStuck(!!el && window.scrollY > 0 && el.getBoundingClientRect().top <= 0);
+    };
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+  // When the search, filters or sort change while you're down the list, go back to the first result.
+  const anchor = useRef<HTMLDivElement>(null);
+  const last = useRef(watch);
+  useEffect(() => {
+    if (last.current === watch) return;
+    last.current = watch;
+    const a = anchor.current;
+    if (!a) return;
+    const top = a.getBoundingClientRect().top + window.scrollY;
+    if (window.scrollY > top) window.scrollTo({ top });
+  }, [watch]);
+  return (
+    <>
+    <div ref={anchor} aria-hidden="true" />
+    <div ref={ref} className={stuck ? "fhead stuck" : "fhead"}>
+      <div className="fhead-row">
+        <input className="search" type="search" placeholder={placeholder} value={q} onChange={(e) => onQ(e.target.value)} />
+        <button
+          type="button"
+          className={open ? "fhead-toggle open" : "fhead-toggle"}
+          onClick={toggle}
+          aria-expanded={open}
+          aria-label={open ? "Hide filters" : "Show filters"}
+          title={open ? "Hide filters" : "Show filters"}
+        >
+          <span className="chev" aria-hidden="true">▾</span>
+          {active > 0 && <span className="fhead-count">{active}</span>}
+        </button>
+        <div className="fhead-sum">{summary}</div>
+        <div className="fhead-actions">{actions}</div>
+      </div>
+      {open && (
+        <div className="fhead-panel">
+          <div className="filters">{children}</div>
+          <div className="fhead-foot">
+            <span>{active === 0 ? "No filters on" : `${active} filter${active === 1 ? "" : "s"} on`}</span>
+            {onClear && <button type="button" className="link" onClick={onClear}>Clear filters</button>}
+          </div>
+        </div>
+      )}
+    </div>
+    </>
+  );
+}
+
 /** Floating ↑ button that appears once you've scrolled about 1.5 screens down. */
 export function BackToTop() {
   const [show, setShow] = useState(false);
