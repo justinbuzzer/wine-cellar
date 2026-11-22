@@ -4,6 +4,7 @@ import { parseNote } from "../notesmodel";
 import { go, href } from "../router";
 import { useWorkbook } from "../store";
 import { TypeDot } from "../ui";
+import { notesLikeNote } from "../winenotes";
 
 export default function NoteView({ id }: { id: string }) {
   const { data } = useWorkbook();
@@ -18,9 +19,7 @@ export default function NoteView({ id }: { id: string }) {
   }
   const inCellar = t.wineId ? data.wines.find((w) => w.wineId === t.wineId) : undefined;
   const n = parseNote(t.note);
-  const others = data.tastings.filter(
-    (x) => x.tastingId !== t.tastingId && ((t.wineId && x.wineId === t.wineId) || (x.name === t.name && String(x.vintage) === String(t.vintage))),
-  );
+  const fam = notesLikeNote(t, data.tastings);
 
   return (
     <>
@@ -90,10 +89,28 @@ export default function NoteView({ id }: { id: string }) {
         ]}
       />
 
-      {others.length > 0 && (
+      {fam.all.length > 1 && (
         <section className="card">
-          <h2>Other notes on this wine ({others.length})</h2>
-          {others.map((o) => <MiniNote key={o.tastingId} t={o} />)}
+          <div className="card-head">
+            <h2>Your notes on {shortName(t)}</h2>
+            <button className="primary icon-btn compare-btn" onClick={() => go(`note/${t.tastingId}/compare`)}>⇆ Compare</button>
+          </div>
+          <p className="muted small fam-sum">
+            {fam.all.length} notes · {fam.vintages} vintage{fam.vintages === 1 ? "" : "s"}
+            {fam.average !== null && ` · average ${fam.average}`}
+          </p>
+          {fam.thisVintage.length > 0 && (
+            <>
+              <h3 className="fam-group">This vintage · {t.vintage ?? "NV"}</h3>
+              {fam.thisVintage.map((o) => <MiniNote key={o.tastingId} t={o} />)}
+            </>
+          )}
+          {fam.otherVintages.length > 0 && (
+            <>
+              <h3 className="fam-group">Other vintages</h3>
+              {fam.otherVintages.map((o) => <MiniNote key={o.tastingId} t={o} />)}
+            </>
+          )}
         </section>
       )}
     </>
@@ -118,21 +135,26 @@ function NoteSection({ title, rows }: { title: string; rows: [string, string | n
   );
 }
 
+/** One of your notes on the same wine: score, vintage, when and where, the start of the aromas. */
 export function MiniNote({ t }: { t: Tasting }) {
   return (
-    <a className="tasting-row note-link" href={href(`note/${t.tastingId}`)}>
-      <div className="tasting-meta">
-        <strong>{t.score ?? "–"}</strong>
-        <span>
-          {t.producer && <span className="wc-producer-inline">{t.producer} </span>}
-          {shortName(t)} <span className="muted">{t.vintage}</span>
+    <a className="tasting-row note-link fam-note" href={href(`note/${t.tastingId}`)}>
+      <span className="fam-score">{t.score ?? "–"}</span>
+      <span className="fam-body">
+        <span className="muted small">
+          <span className="vint-badge">{t.vintage ?? "NV"}</span>
+          {[tastedOn(t), t.source].filter(Boolean).join(" · ")}
         </span>
-      </div>
-      <div className="muted small">
-        {t.dateTasted ?? t.yearTasted}
-        {t.source && ` · ${t.source}`}
-      </div>
-      {t.nose && <p className="tasting-text clamp">{t.nose}</p>}
+        {t.nose && <span className="tasting-text clamp">{t.nose}</span>}
+      </span>
     </a>
   );
+}
+
+/** "Mar 2024" from the date tasted (or the year when that's all there is). */
+export function tastedOn(t: Pick<Tasting, "dateTasted" | "yearTasted">): string {
+  if (t.dateTasted && /^\d{4}-\d{2}/.test(t.dateTasted)) {
+    return new Date(`${t.dateTasted.slice(0, 7)}-01T00:00:00`).toLocaleDateString("en-SG", { month: "short", year: "numeric" });
+  }
+  return t.yearTasted ? String(t.yearTasted) : "";
 }

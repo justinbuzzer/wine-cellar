@@ -14,6 +14,7 @@ import PurchaseForm from "./views/PurchaseForm";
 import SellForm from "./views/SellForm";
 import NoteForm from "./views/NoteForm";
 import NoteView from "./views/NoteView";
+import NoteCompare from "./views/NoteCompare";
 import Notes from "./views/Notes";
 import Overview from "./views/Overview";
 import History from "./views/History";
@@ -145,6 +146,7 @@ function Routes() {
     }
     if (arg === "draft" && sub) return <NoteForm key={`draft-${sub}`} draftId={sub} />;
     if (arg && sub === "edit") return <NoteForm key={`edit-${arg}`} editId={arg} />;
+    if (arg && sub === "compare") return <NoteCompare key={`cmp-${arg}`} id={arg} />;
     if (arg) return <NoteView key={arg} id={arg} />;
   }
   switch (page) {
