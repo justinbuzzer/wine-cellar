@@ -15,8 +15,11 @@ import {
   parseKey, planTotals, progress, reasonLabel, reasonsFor, wineLabel, type CountEntry, type Diff, type Plan, type Stocktake as St,
 } from "../stocktakemodel";
 import { bottles, ChipGroup, FilterHeader, TypeDot, useToast } from "../ui";
+import { allSpots, boxProgress, changedPlacements, doneSpots, effective, recordBox } from "../boxcount";
+import { isSetUp } from "../spots";
+import { BoxCount, BoxGrid } from "./BoxCount";
 
-export default function Stocktake({ step, arg }: { step?: string; arg?: string }) {
+export default function Stocktake({ step, arg, spot }: { step?: string; arg?: string; spot?: string }) {
   const { data } = useWorkbook();
   if (!data.hasLocations) {
     return (
@@ -30,8 +33,18 @@ export default function Stocktake({ step, arg }: { step?: string; arg?: string }
     const loc = locFromSlug(arg);
     return loc ? <Count key={loc} loc={loc} /> : <Home />;
   }
+  if (step === "box") {
+    const loc = locFromSlug(arg);
+    return loc && spot ? <BoxCount key={`${loc}|${spot}`} loc={loc} spot={spot} /> : <Home />;
+  }
   if (step === "review") return <Review />;
   return <Home />;
+}
+
+/** The stocktake as the review sees it (box-counted locations turned into totals). */
+function useEffective(st: St | null) {
+  const { data } = useWorkbook();
+  return useMemo(() => (st ? effective(st, data.wines, data.layout) : null), [st, data.wines, data.layout]);
 }
 
 /** Shown on the start page after applying (kept here so it survives the page change). */
@@ -176,7 +189,8 @@ function Home() {
 
 function InProgress({ st, onDiscard }: { st: St; onDiscard: () => void }) {
   const { data } = useWorkbook();
-  const { diffs, arrivals } = differences(st, data.wines);
+  const eff = useEffective(st)!;
+  const { diffs, arrivals } = differences(eff.st, data.wines);
   const toExplain = diffs.filter((d) => d.rest !== 0).length;
   return (
     <section className="card">
@@ -188,6 +202,24 @@ function InProgress({ st, onDiscard }: { st: St; onDiscard: () => void }) {
         <p className="notice">Applying was interrupted. Open the review to finish it; nothing will be done twice.</p>
       )}
       {LOCS.map((loc) => {
+        if (isSetUp(data.layout, loc)) {
+          const b = boxProgress(st, data.layout, data.wines, loc);
+          const word = loc === "Home" ? "racks" : "boxes";
+          return (
+            <div className="st-loc" key={loc}>
+              <div className="st-loc-head">
+                <strong>{loc}</strong>
+                <span className="muted small">
+                  {b.done} of {b.spots} {word} checked{eff.boxes.waiting[loc] ? ` · ${eff.boxes.waiting[loc]} wines waiting for other ${word}` : ""}
+                </span>
+              </div>
+              <Bar value={b.done} total={b.spots} />
+              <button disabled={!!st.plan} onClick={() => go(`stocktake/count/${LOC_SLUG[loc]}`)}>
+                {b.done || b.started ? `Carry on counting ${loc}` : `Count ${loc} ${loc === "Home" ? "rack by rack" : "box by box"}`}
+              </button>
+            </div>
+          );
+        }
         const p = progress(st, data.wines, loc);
         return (
           <div className="st-loc" key={loc}>
@@ -264,6 +296,19 @@ function Count({ loc }: { loc: Location }) {
         <p>No stocktake in progress.</p>
         <a href={href("stocktake")}>Start one →</a>
       </section>
+    );
+  }
+  if (isSetUp(data.layout, loc)) {
+    return (
+      <>
+        <a className="back" href={href("stocktake")}>← Stocktake</a>
+        <div className="card-head">
+          <h2 className="st-title">Counting {loc}</h2>
+          <button className="primary st-review-btn" onClick={() => go("stocktake/review")}>Review</button>
+        </div>
+        <BoxGrid loc={loc} />
+        <SyncLine />
+      </>
     );
   }
   const counts = st.counts;
@@ -460,15 +505,31 @@ function Review() {
     );
   }
   const byId = new Map(data.wines.map((w) => [w.wineId, w]));
-  const { diffs, arrivals } = differences(st, data.wines);
+  const eff = effective(st, data.wines, data.layout);
+  const est = eff.st;
+  const { diffs, arrivals } = differences(est, data.wines);
+  const placementsCount = changedPlacements(eff.boxes.placements, data.wines).length;
   const moves = diffs.filter((d) => d.moved > 0 && d.loc === "K Cellars");
   const fewer = diffs.filter((d) => d.rest < 0);
   const more = diffs.filter((d) => d.rest > 0);
   const locked = !!st.plan;
-  const unchecked = LOCS.map((loc) => {
+  const unchecked = LOCS.filter((loc) => !isSetUp(data.layout, loc)).map((loc) => {
     const ws = countList(data.wines, loc).expected.filter((w) => !st.counts[keyOf(loc, w.wineId!)]);
     return { loc, wines: ws, bottles: ws.reduce((s, w) => s + expectedAt(w, loc), 0) };
   });
+  // Box-by-box locations: boxes not checked yet.
+  const openBoxes = LOCS.filter((loc) => isSetUp(data.layout, loc)).map((loc) => {
+    const done = doneSpots(st, loc);
+    const spots = allSpots(data.layout, data.wines, loc).filter((s) => !done.has(s));
+    return { loc, spots, waiting: eff.boxes.waiting[loc] ?? 0 };
+  });
+
+  function boxesGone(loc: Location, spots: string[]) {
+    const word = loc === "Home" ? "racks" : "boxes";
+    if (!window.confirm(`Tick the ${spots.length} ${word} at ${loc} you haven't checked as empty? Bottles listed in them, and bottles not found in any ${word === "racks" ? "rack" : "box"}, then count as gone. You'll say why for each below.`)) return;
+    const now = Date.now();
+    updateStocktake(file, (s) => spots.reduce((acc, spot) => recordBox(acc, data.wines, data.layout, loc, spot, { at: now, done: true, sealed: false, items: {} }), s));
+  }
 
   function markGone(loc: Location, wines: Wine[], n: number) {
     if (!window.confirm(`Count all ${wines.length} unchecked wines at ${loc} (${bottles(n)}) as no longer there? You'll then say why for each below.`)) return;
@@ -501,7 +562,7 @@ function Review() {
   async function apply() {
     setWarn(null);
     if (st!.plan) return void run(st!.plan);
-    const missing = missingReasons(st!, diffs);
+    const missing = missingReasons(est, diffs);
     if (missing.length) {
       setWarn(`Choose a reason for ${missing.length} wine${missing.length === 1 ? "" : "s"} first.`);
       document.getElementById(`d-${missing[0].key}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -512,7 +573,7 @@ function Review() {
       // Compare with the spreadsheet as it is right now, not the app's copy.
       const snap = await Workbook.reader(file).readTable(config.tables.inventory);
       const fresh = toTable(snap.values).rows.map(toWine);
-      const plan = buildPlan(st!, fresh, todayIso());
+      const plan = buildPlan(est, fresh, todayIso(), eff.boxes.placements);
       if (plan.wines.length === 0) {
         if (window.confirm("Nothing needs changing: every wine you counted matches. Finish the stocktake?")) {
           await endStocktake(file).catch(() => {});
@@ -537,6 +598,11 @@ function Review() {
 
       {diffs.length === 0 && arrivals.length === 0 && (
         <p className="muted">No differences so far. Every wine you've counted matches your list.</p>
+      )}
+      {placementsCount > 0 && (
+        <p className="muted small">
+          {placementsCount} wine{placementsCount === 1 ? "'s" : "s'"} box or rack list will be updated from what you found.
+        </p>
       )}
 
       {moves.length > 0 && (
@@ -579,7 +645,30 @@ function Review() {
         </section>
       )}
 
-      <section className="card st-review">
+      {openBoxes.map((b) => {
+        const word = b.loc === "Home" ? "racks" : "boxes";
+        return (
+          <section className="card st-review" key={b.loc}>
+            <h3>{b.loc} {word}</h3>
+            {b.spots.length === 0 ? (
+              <p className="muted small">Every {b.loc === "Home" ? "rack" : "box"} is checked.</p>
+            ) : (
+              <>
+                <p className="small">
+                  {b.spots.length} {word} not checked yet: {b.spots.slice(0, 12).join(", ")}{b.spots.length > 12 ? "…" : ""}.
+                  {b.waiting ? ` ${b.waiting} wine${b.waiting === 1 ? " is" : "s are"} waiting for them before ${b.waiting === 1 ? "its" : "their"} count is known.` : ""} Wines
+                  only in unchecked {word} stay as they are.
+                </p>
+                <button className="link small" disabled={locked} onClick={() => boxesGone(b.loc, b.spots)}>
+                  I've checked every {b.loc === "Home" ? "rack" : "box"} at {b.loc}: tick the rest as empty
+                </button>
+              </>
+            )}
+          </section>
+        );
+      })}
+
+      {unchecked.length > 0 && <section className="card st-review">
         <h3>Not checked</h3>
         {unchecked.every((u) => u.wines.length === 0) ? (
           <p className="muted small">You've checked every wine at both locations.</p>
@@ -595,7 +684,7 @@ function Review() {
             </div>
           ))
         )}
-      </section>
+      </section>}
 
       {phase.kind === "confirm" ? (
         <Confirm plan={phase.plan} onCancel={() => setPhase({ kind: "idle" })} onApply={() => void run(phase.plan)} />
@@ -605,7 +694,7 @@ function Review() {
           {phase.kind === "error" && <span className="warn small">{phase.message}</span>}
           {phase.kind === "applying" && <span className="muted small">{phase.step}</span>}
           {phase.kind === "checking" && <span className="muted small">Checking your workbook…</span>}
-          <button className="primary" disabled={busy || (!locked && diffs.length === 0 && arrivals.length === 0)} onClick={() => void apply()}>
+          <button className="primary" disabled={busy || (!locked && diffs.length === 0 && arrivals.length === 0 && placementsCount === 0)} onClick={() => void apply()}>
             {busy ? "Working…" : locked ? "Finish applying" : "Apply to workbook"}
           </button>
         </div>
@@ -659,10 +748,16 @@ function Confirm({ plan, onCancel, onApply }: { plan: Plan; onCancel: () => void
     <section className="card st-confirm">
       <h3>Apply to your workbook?</h3>
       <p>
-        {t.wines} wine{t.wines === 1 ? "" : "s"} will change
-        {t.drunk ? ` · ${bottles(t.drunk)} added to your history as drunk` : ""}
-        {t.sold ? ` · ${bottles(t.sold)} added to your sales` : ""}
-        {t.arrived ? ` · ${t.arrived} marked as arrived` : ""}.
+        {[
+          t.wines ? `${t.wines} wine${t.wines === 1 ? "'s count" : "s' counts"} will change` : "",
+          t.drunk ? `${bottles(t.drunk)} added to your history as drunk` : "",
+          t.sold ? `${bottles(t.sold)} added to your sales` : "",
+          t.arrived ? `${t.arrived} marked as arrived` : "",
+          t.placed ? `${t.placed} wine${t.placed === 1 ? "'s box list" : "s' box lists"} updated` : "",
+        ]
+          .filter(Boolean)
+          .join(" · ")}
+        .
       </p>
       {plan.drift.length > 0 && (
         <>

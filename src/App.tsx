@@ -160,7 +160,7 @@ function Routes() {
     case "sell":
       return <SellForm key={arg ?? "sell"} preselect={arg} />;
     case "stocktake":
-      return <Stocktake key={`${arg ?? ""}-${sub ?? ""}`} step={arg} arg={sub} />;
+      return <Stocktake key={`${arg ?? ""}-${sub ?? ""}-${subArg ?? ""}`} step={arg} arg={sub} spot={subArg} />;
     case "settings":
       return <Settings />;
     case "storage":

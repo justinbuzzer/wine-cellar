@@ -7,6 +7,8 @@
 // safely (see stocktake.ts).
 
 import { shortName, type Wine } from "./data";
+import type { BaseEntry, BoxCheck } from "./boxcount";
+import { formatSpots, parseSpots } from "./spots";
 import type { Location } from "./locations";
 
 export const LOCS: readonly Location[] = ["K Cellars", "Home"];
@@ -43,6 +45,10 @@ export interface Stocktake {
   choices: Record<string, Choice>;
   /** Set once Apply has started: the exact changes, so a retry finishes the same job. */
   plan: Plan | null;
+  /** Box-by-box counting (see boxcount.ts): key `${location}|${spot}`. */
+  boxes?: Record<string, BoxCheck>;
+  /** How each wine stood when first seen in a box count: key `${location}|${wineId}`. */
+  base?: Record<string, BaseEntry>;
 }
 
 export const keyOf = (loc: Location, wineId: string) => `${loc}|${wineId}`;
@@ -207,6 +213,8 @@ export interface PlanWine {
   drunk: { loc: Location; n: number }[];
   /** Rows to add to the Sold table. */
   sold: { loc: Location; n: number; price: number | null }[];
+  /** New box/rack lists from a box-by-box count (text written as is when the count is unchanged). */
+  spotText?: Partial<Record<Location, { text: string; counted: number }>>;
 }
 
 export interface Drift {
@@ -246,7 +254,7 @@ export function parsePrice(s: string): number | null {
  * a bottle through the app afterwards), that change is added on top of your
  * count instead of being overwritten, and listed in `drift`.
  */
-export function buildPlan(st: Stocktake, fresh: Wine[], date: string): Plan {
+export function buildPlan(st: Stocktake, fresh: Wine[], date: string, placements: Record<string, { text: string; counted: number }> = {}): Plan {
   const { diffs, arrivals } = differences(st, fresh);
   const byId = new Map(fresh.map((w) => [w.wineId, w]));
   const plans = new Map<string, PlanWine>();
@@ -317,11 +325,24 @@ export function buildPlan(st: Stocktake, fresh: Wine[], date: string): Plan {
       p.logs.push({ wineId: p.wineId, loc, expected: e ? e.expected : null, counted: e ? e.counted : null, before, after, reason: parts.join(", ") });
     }
   }
+  // Box lists from a box-by-box count: for changed wines, and for any wine whose boxes changed.
+  for (const [k, pl] of Object.entries(placements)) {
+    const { loc, wineId } = parseKey(k);
+    const w = byId.get(wineId);
+    if (!w) continue;
+    const now = loc === "Home" ? w.homeSpots : w.kcSpots;
+    const nowText = formatSpots(parseSpots(now, expectedAt(w, loc)).spots, expectedAt(w, loc));
+    if (!plans.has(wineId) && nowText === pl.text) continue;
+    const p = planFor(wineId);
+    p.spotText = { ...(p.spotText ?? {}), [loc]: pl };
+  }
   return { date, wines: [...plans.values()].sort((a, b) => a.label.localeCompare(b.label)), drift };
 }
 
 export interface PlanTotals {
   wines: number;
+  /** Wines whose box/rack list changes. */
+  placed: number;
   added: number;
   removed: number;
   drunk: number;
@@ -330,7 +351,7 @@ export interface PlanTotals {
 }
 
 export function planTotals(p: Plan): PlanTotals {
-  let added = 0, removed = 0, drunk = 0, sold = 0, arrived = 0;
+  let added = 0, removed = 0, drunk = 0, sold = 0, arrived = 0, placed = 0;
   for (const w of p.wines) {
     for (const loc of LOCS) {
       const d = (w.set[loc] ?? w.before[loc] ?? 0) - (w.before[loc] ?? 0);
@@ -340,6 +361,8 @@ export function planTotals(p: Plan): PlanTotals {
     drunk += w.drunk.reduce((s, x) => s + x.n, 0);
     sold += w.sold.reduce((s, x) => s + x.n, 0);
     if (w.clearNya) arrived++;
+    // Only wines whose box list is the sole change (count changes are listed already).
+    if (w.spotText && !w.logs.length) placed++;
   }
-  return { wines: p.wines.length, added, removed, drunk, sold, arrived };
+  return { wines: p.wines.filter((w) => w.logs.length || w.clearNya).length, placed, added, removed, drunk, sold, arrived };
 }

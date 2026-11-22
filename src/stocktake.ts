@@ -17,7 +17,9 @@ import { config } from "./config";
 import { headersOf, toTable, toWine, type Cell, type Wine } from "./data";
 import { GraphError, withSession, Workbook, type TableSnapshot } from "./graph";
 import { OPENED_SPEC } from "./history";
-import { countCells } from "./inventory";
+import { countCells, SPOT_COLUMN, withSpotColumns } from "./inventory";
+import { clearBox, recordBox, type BoxCheck } from "./boxcount";
+import { changeSpots, type Layout } from "./spots";
 import { LOCATION_COLUMN, type Location } from "./locations";
 import { appendLogs, readLog, removeLog, type LogSpec } from "./logtable";
 import { excelSerial } from "./notesmodel";
@@ -34,7 +36,7 @@ function loadLocal(): Stocktake | null {
   try {
     const raw = localStorage.getItem(LOCAL_KEY);
     const st = raw ? (JSON.parse(raw) as Stocktake) : null;
-    return st && st.id && st.counts ? { ...st, choices: st.choices ?? {}, plan: st.plan ?? null } : null;
+    return st && st.id && st.counts ? { ...st, choices: st.choices ?? {}, plan: st.plan ?? null, boxes: st.boxes ?? {}, base: st.base ?? {} } : null;
   } catch {
     return null;
   }
@@ -130,6 +132,16 @@ export function setChoice(file: string, key: string, c: Choice) {
   updateStocktake(file, (st) => ({ ...st, choices: { ...st.choices, [key]: c } }));
 }
 
+/** Saves a box's count (draft or done). */
+export function setBox(file: string, wines: Wine[], layout: Layout, loc: Location, spot: string, check: BoxCheck) {
+  updateStocktake(file, (st) => recordBox(st, wines, layout, loc, spot, check));
+}
+
+/** Forgets a box's count so it can be counted again. */
+export function resetBox(file: string, loc: Location, spot: string) {
+  updateStocktake(file, (st) => clearBox(st, loc, spot));
+}
+
 // Save when the app is put in the background (phone locked, switched app).
 if (typeof document !== "undefined") {
   document.addEventListener("visibilitychange", () => {
@@ -140,7 +152,9 @@ if (typeof document !== "undefined") {
 // ---- The progress sheet in the workbook -------------------------------------------
 
 export const PROGRESS_SHEET = "Stocktake Count";
-const PROGRESS_HEADERS = ["StocktakeID", "Started", "Saved", "Location", "WineID", "Expected", "Counted", "Counted At", "Reason", "Sale Price"];
+const PROGRESS_HEADERS = ["StocktakeID", "Started", "Saved", "Location", "WineID", "Expected", "Counted", "Counted At", "Reason", "Sale Price", "Kind", "Data"];
+/** Box counts are kept as JSON split over cells (Excel allows ~32,000 characters per cell). */
+const CHUNK = 30000;
 
 const iso = (ms: number) => new Date(ms).toISOString();
 const ms = (v: Cell) => {
@@ -158,8 +172,15 @@ function progressRows(st: Stocktake): Cell[][] {
     rows.push([
       st.id, iso(st.started), iso(st.updated), loc, wineId,
       e ? e.expected : "", e ? e.counted : "", e ? iso(e.at) : "",
-      c?.reason ?? "", c?.price ?? "",
+      c?.reason ?? "", c?.price ?? "", "", "",
     ]);
+  }
+  if (st.boxes && Object.keys(st.boxes).length) {
+    const json = JSON.stringify({ boxes: st.boxes, base: st.base ?? {} });
+    for (let i = 0; i * CHUNK < json.length; i++) {
+      // A leading letter keeps Excel from reading a chunk as a number or formula.
+      rows.push([st.id, iso(st.started), iso(st.updated), "", "", "", "", "", "", "", "boxes", `J${json.slice(i * CHUNK, (i + 1) * CHUNK)}`]);
+    }
   }
   return rows;
 }
@@ -228,13 +249,27 @@ export async function readSavedProgress(file: string): Promise<Stocktake | null>
   if (!rows.length) return null;
   const id = String(rows[0]["StocktakeID"]);
   const st: Stocktake = { id, started: ms(rows[0]["Started"]), updated: ms(rows[0]["Saved"]), counts: {}, choices: {}, plan: null };
+  let json = "";
   for (const r of rows) {
     if (String(r["StocktakeID"]) !== id) continue;
+    if (r["Kind"] === "boxes") {
+      json += String(r["Data"] ?? "").slice(1);
+      continue;
+    }
     const k = keyOf(String(r["Location"]) as Location, String(r["WineID"]));
     if (r["Counted"] !== null && r["Counted"] !== "") {
       st.counts[k] = { expected: Number(r["Expected"]) || 0, counted: Number(r["Counted"]) || 0, at: ms(r["Counted At"]) };
     }
     if (r["Reason"]) st.choices[k] = { reason: String(r["Reason"]) as Choice["reason"], price: String(r["Sale Price"] ?? "") };
+  }
+  if (json) {
+    try {
+      const d = JSON.parse(json) as { boxes: Stocktake["boxes"]; base: Stocktake["base"] };
+      st.boxes = d.boxes;
+      st.base = d.base;
+    } catch {
+      /* unreadable box data: the counts by wine still load */
+    }
   }
   sheetRows = values.length;
   return st;
@@ -345,7 +380,12 @@ export function applyPlan(file: string, st: Stocktake, plan: Plan, onStep: (text
     }
     await appendLogs(wb, STOCKTAKE_SPEC, logRows);
 
-    // 2. Bottle counts (and "arrived").
+    // 2. Bottle counts (and "arrived"), and box lists from a box-by-box count.
+    if (plan.wines.some((p) => p.spotText)) {
+      const withCols = await withSpotColumns(wb, inv);
+      inv.values = withCols.values;
+      inv.address = withCols.address;
+    }
     const skipped: string[] = [];
     let changed = 0;
     let i = 0;
@@ -370,6 +410,13 @@ export function applyPlan(file: string, st: Stocktake, plan: Plan, onStep: (text
         }
         // Boxes/racks follow along: missing bottles come off the not-placed ones first.
         Object.assign(changes, countCells(at, loc, target));
+      }
+      for (const [loc, pl] of Object.entries(p.spotText ?? {}) as [Location, { text: string; counted: number }][]) {
+        const col = SPOT_COLUMN[loc];
+        if (!at.headers.includes(col)) continue;
+        // Bottles opened or sold since the box was counted come off the list too.
+        const total = typeof changes[LOCATION_COLUMN[loc]] === "number" ? (changes[LOCATION_COLUMN[loc]] as number) : n(at.row[at.col(LOCATION_COLUMN[loc])]);
+        changes[col] = total === pl.counted ? pl.text : changeSpots(pl.text, pl.counted, total);
       }
       if (p.clearNya && at.headers.includes("Status") && isNya({ status: str(at.row[at.col("Status")]) })) changes["Status"] = "";
       if (Object.keys(changes).length) {

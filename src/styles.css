@@ -485,6 +485,11 @@ a.chip-btn { text-decoration: none; color: inherit; }
 .set-seg { margin: 0; flex: none; }
 .set-seg button { padding: 6px 14px; }
 .set-note { margin: -4px 0 6px; }
+.spot-cell.done { background: var(--chip); border-color: var(--ok, #3b7d4f); }
+.spot-cell.done small { color: var(--ok, #3b7d4f); }
+.spot-cell.started { border-color: var(--gold); border-width: 2px; }
+.st-box-bar { flex-wrap: wrap; gap: 8px 12px; }
+.st-box-bar .primary { flex: 1; }
 .add-results { display: grid; gap: 6px; margin-top: 8px; }
 .add-result {
   display: flex; justify-content: space-between; align-items: center; gap: 10px; width: 100%; text-align: left;
