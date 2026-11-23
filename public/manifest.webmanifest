@@ -1,6 +1,6 @@
 {
-  "name": "Wine Cellar",
-  "short_name": "Cellar",
+  "name": "halffulldrinkup",
+  "short_name": "halffulldrinkup",
   "description": "Your wine cellar, wine list and tasting notes.",
   "start_url": "./",
   "scope": "./",

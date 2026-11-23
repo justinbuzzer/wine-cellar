@@ -10,6 +10,7 @@ import { showInNotes } from "./Notes";
 import { go, href } from "../router";
 import { useWorkbook } from "../store";
 import { useStocktake } from "../stocktake";
+
 import { TypeDot } from "../ui";
 import { TYPE_ORDER, typeLabel } from "../winelist";
 import { showInCellar } from "./Cellar";
@@ -79,6 +80,7 @@ export default function Overview() {
 
       <LogoProgress />
       <StocktakeLink />
+
 
       <div className="ov-grid">
         <section className="card">

@@ -9,6 +9,9 @@ import { go, href } from "../router";
 import { describeError, useWorkbook } from "../store";
 import { Stepper, TypeDot, useToast } from "../ui";
 import { SpotSelect, useResolveSpot } from "./SpotPicker";
+import { addGroupBuy } from "../groupbuys";
+import { isMe, knownPeople, ME, newGroupId, personKey } from "../groupbuymodel";
+import { excelSerial, todayIso } from "../notesmodel";
 
 // ---- state ----------------------------------------------------------------------
 
@@ -39,6 +42,10 @@ interface Line {
   price: string;
   state: LineState;
   message?: string;
+  /** Group buy: bottles per person ("Me" = yours). */
+  split?: Record<string, number>;
+  /** Once saved: the cellar wine your share went to ("" if you took none). */
+  cellarId?: string;
 }
 interface Shared {
   source: string;
@@ -49,6 +56,15 @@ interface Shared {
   year?: string;
   /** Box or rack the bottles go into (only once they've arrived). */
   spot?: string | null;
+  /** Split with friends; your share goes to the cellar, everyone's is tracked under Group buys. */
+  group?: boolean;
+  groupId?: string;
+  /** The GroupBuys rows have been written. */
+  groupSaved?: boolean;
+  /** What you call it, e.g. "Burgundy 2021 release". */
+  groupName?: string;
+  /** Friends who've already paid (key: lower-case name). */
+  paid?: Record<string, boolean>;
 }
 
 const thisYear = () => String(new Date().getFullYear());
@@ -92,10 +108,17 @@ function saveDraft(d: { shared: Shared; lines: Line[] } | null) {
 
 const vintageCell = (v: string): Cell => (v.trim() === "" ? "" : /^nv$/i.test(v.trim()) ? "NV" : Number(v));
 
-function validate(l: Line): string | null {
+/** Bottles per person on a group buy line (everything is yours until split). */
+export function splitOf(l: Line): Record<string, number> {
+  return l.split && Object.keys(l.split).length ? l.split : { [ME]: l.bottles };
+}
+const splitTotal = (l: Line) => Object.values(splitOf(l)).reduce((s, n) => s + n, 0);
+
+function validate(l: Line, group = false): string | null {
   if (l.state === "saved") return null;
   if (l.kind === "pick") return "Choose a wine, or remove this line.";
   if (l.bottles < 1) return "Add at least one bottle.";
+  if (group && splitTotal(l) !== l.bottles) return `Split all ${l.bottles} bottles (${splitTotal(l)} split so far).`;
   if (l.price.trim() && storedPrice(l.price, false) === null) return "Price must be a number.";
   if (l.kind === "new") {
     const f = l.fields;
@@ -110,24 +133,27 @@ function validate(l: Line): string | null {
 
 // ---- component ------------------------------------------------------------------
 
-export default function PurchaseForm() {
-  const { data, putWine } = useWorkbook();
+export default function PurchaseForm({ startGroup = false }: { startGroup?: boolean }) {
+  const { data, putWine, putGroupBuys } = useWorkbook();
   const toast = useToast();
   const resolveSpot = useResolveSpot();
   const [initial] = useState(() => loadDraft());
-  const [shared, setShared] = useState<Shared>(initial?.shared ?? DEFAULT_SHARED);
+  const [shared, setShared] = useState<Shared>(initial?.shared ?? { ...DEFAULT_SHARED, group: startGroup });
   const [lines, setLines] = useState<Line[]>(initial?.lines?.length ? initial.lines : [blankLine()]);
   const [restored, setRestored] = useState(!!initial);
   const [busy, setBusy] = useState(false);
   const [showErrors, setShowErrors] = useState(false);
 
   const hasContent = lines.some((l) => l.kind !== "pick") || !!shared.source;
-  const finished = lines.length > 0 && lines.every((l) => l.state === "saved");
+  const linesDone = lines.length > 0 && lines.every((l) => l.state === "saved");
+  // A group buy is only finished once its GroupBuys record is written too.
+  const finished = linesDone && (!shared.group || !!shared.groupSaved);
   useEffect(() => {
     // Once every line is saved there's nothing left to restore, so don't write the draft back.
     if (finished) saveDraft(null);
     else if (hasContent) saveDraft({ shared, lines });
   }, [shared, lines, hasContent, finished]);
+  const people = useMemo(() => knownPeople(data.groupBuys), [data.groupBuys]);
 
   const setLine = (key: string, patch: Partial<Line> | ((l: Line) => Partial<Line>)) =>
     setLines((ls) => ls.map((l) => (l.key === key ? { ...l, ...(typeof patch === "function" ? patch(l) : patch) } : l)));
@@ -159,7 +185,7 @@ export default function PurchaseForm() {
 
   async function saveAll() {
     setShowErrors(true);
-    const problems = lines.map(validate).filter(Boolean);
+    const problems = lines.map((l) => validate(l, !!shared.group)).filter(Boolean);
     const y = yearValue(shared);
     if ((shared.year ?? "").trim() && (y === null || y < 1900 || y > new Date().getFullYear())) {
       toast({ text: "Year purchased must be a year like 2026.", error: true });
@@ -180,25 +206,38 @@ export default function PurchaseForm() {
       toast({ text: describeError(e), error: true });
       return;
     }
+    const group = !!shared.group;
+    const groupId = shared.groupId ?? newGroupId();
+    if (group && !shared.groupId) setShared((s) => ({ ...s, groupId }));
     let saved = 0;
     let failed = 0;
+    const cellarIds = new Map<string, string>();
     for (const line of lines) {
       if (line.state === "saved") continue;
       setLine(line.key, { state: "saving", message: undefined });
       try {
         const price = storedPrice(line.price, shared.beforeGst);
-        if (line.kind === "existing") {
+        const mine = group ? splitOf(line)[ME] ?? 0 : line.bottles;
+        const others = line.bottles - mine;
+        if (group && mine === 0) {
+          // None for you: nothing goes into the cellar; the group buy record tracks it.
+          const id = line.kind === "existing" ? line.wineId : "";
+          cellarIds.set(line.key, id);
+          setLine(line.key, { state: "saved", cellarId: id, message: `${others} for friends · none for your cellar` });
+        } else if (line.kind === "existing") {
           const before = wineById.get(line.wineId);
-          const { wine, markedNya } = await receiveBottles(data.file.id, line.wineId, shared.where, line.bottles, {
+          const { wine, markedNya } = await receiveBottles(data.file.id, line.wineId, shared.where, mine, {
             price: price !== null && price !== before?.price ? price : undefined,
             notYetArrived: shared.nya,
             yearPurchased: yearValue(shared),
             spot,
           });
           putWine(wine);
+          cellarIds.set(line.key, line.wineId);
           setLine(line.key, {
             state: "saved",
-            message: `+${line.bottles} at ${shared.where} · now ${wine.qty} bottle${wine.qty === 1 ? "" : "s"}${markedNya ? " · not yet arrived" : ""}`,
+            cellarId: line.wineId,
+            message: `+${mine} at ${shared.where} · now ${wine.qty} bottle${wine.qty === 1 ? "" : "s"}${markedNya ? " · not yet arrived" : ""}${others ? ` · ${others} for friends` : ""}`,
           });
         } else {
           const f = line.fields;
@@ -222,11 +261,12 @@ export default function PurchaseForm() {
           const wine = await addWine(
             data.file.id,
             cells,
-            { kc: shared.where === "K Cellars" ? line.bottles : 0, home: shared.where === "Home" ? line.bottles : 0 },
+            { kc: shared.where === "K Cellars" ? mine : 0, home: shared.where === "Home" ? mine : 0 },
             shared.where === "K Cellars" ? { kc: spot } : { home: spot },
           );
           putWine(wine);
-          setLine(line.key, { state: "saved", message: `Added as ${wine.wineId}` });
+          cellarIds.set(line.key, wine.wineId ?? "");
+          setLine(line.key, { state: "saved", cellarId: wine.wineId ?? "", message: `Added as ${wine.wineId}${others ? ` · ${others} for friends` : ""}` });
         }
         saved++;
       } catch (e) {
@@ -237,9 +277,57 @@ export default function PurchaseForm() {
     setBusy(false);
     if (failed) {
       toast({ text: `${saved} saved, ${failed} failed. Fix or retry the lines marked in red.`, error: true });
+    } else if (group) {
+      await saveGroupRecord(groupId, cellarIds);
     } else {
       saveDraft(null);
       toast({ text: `Purchase saved: ${saved} line${saved === 1 ? "" : "s"}.` });
+    }
+  }
+
+  /** Writes the GroupBuys rows: one per person per wine. Safe to retry (only once it succeeds is it marked saved). */
+  async function saveGroupRecord(groupId: string, cellarIds: Map<string, string> = new Map()) {
+    setBusy(true);
+    try {
+      const date = excelSerial(todayIso());
+      const rows: Record<string, Cell>[] = [];
+      lines.filter((l) => l.kind !== "pick").forEach((l, i) => {
+        const w = wineById.get(l.wineId);
+        const f = l.fields;
+        const price = storedPrice(l.price, shared.beforeGst) ?? (l.kind === "existing" ? w?.price ?? null : null);
+        const wineId = cellarIds.get(l.key) ?? l.cellarId ?? (l.kind === "existing" ? l.wineId : "");
+        for (const [who, n] of Object.entries(splitOf(l))) {
+          if (n <= 0) continue;
+          rows.push({
+            GroupID: groupId,
+            "Order Date": date,
+            Merchant: shared.source.trim(),
+            Line: i + 1,
+            WineID: wineId,
+            Producer: l.kind === "existing" ? w?.producer ?? "" : f.producer.trim(),
+            Name: l.kind === "existing" ? w?.name ?? "" : f.name.trim(),
+            Vintage: l.kind === "existing" ? w?.vintage ?? "" : vintageCell(f.vintage),
+            Price: price ?? "",
+            Person: who,
+            Bottles: n,
+            To: isMe(who) ? shared.where : "",
+            Arrived: shared.nya ? "" : "Yes",
+            "Arrived Date": shared.nya ? "" : date,
+            Paid: !isMe(who) && shared.paid?.[personKey(who)] ? "Yes" : "",
+            "Paid Date": !isMe(who) && shared.paid?.[personKey(who)] ? date : "",
+            "Group Name": (shared.groupName ?? "").trim(),
+          });
+        }
+      });
+      putGroupBuys(await addGroupBuy(data.file.id, rows));
+      setShared((s) => ({ ...s, groupId, groupSaved: true }));
+      saveDraft(null);
+      const who = new Set(rows.map((r) => String(r.Person)).filter((p) => !isMe(p)));
+      toast({ text: `Group Buy saved: ${who.size} friend${who.size === 1 ? "" : "s"}, ${lines.length} wine${lines.length === 1 ? "" : "s"}.` });
+    } catch (e) {
+      toast({ text: `Your bottles are saved, but the Group Buy record couldn't be: ${describeError(e)}. Tap "Save the Group Buy record" to retry.`, error: true });
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -260,7 +348,36 @@ export default function PurchaseForm() {
         </div>
       )}
 
-      <h2 className="note-form-title">Add a purchase</h2>
+      <div className="card-head">
+        <h2 className="note-form-title">{shared.group ? "Add a Group Buy" : "Add a purchase"}</h2>
+        {data.groupBuys.length > 0 && <a href={href("groupbuys")}>Group Buys →</a>}
+      </div>
+
+      <section className="card note-section">
+        <label className="switch">
+          <input
+            type="checkbox"
+            checked={!!shared.group}
+            disabled={lines.some((l) => l.state === "saved")}
+            onChange={(e) => setShared({ ...shared, group: e.target.checked })}
+          />{" "}
+          Group Buy: split with friends
+        </label>
+        {shared.group && (
+          <>
+            <label className="field">
+              <span>Name this Group Buy</span>
+              <input
+                value={shared.groupName ?? ""}
+                placeholder="e.g. Burgundy 2021 release"
+                disabled={!!shared.groupSaved}
+                onChange={(e) => setShared({ ...shared, groupName: e.target.value })}
+              />
+            </label>
+            <p className="muted small">Your share goes into your cellar. Everyone's share is tracked under Group Buys: arrived, paid and handed over.</p>
+          </>
+        )}
+      </section>
 
       <section className="card note-section">
         <h3>For the whole purchase</h3>
@@ -300,7 +417,10 @@ export default function PurchaseForm() {
           index={i}
           line={line}
           shared={shared}
-          error={showErrors ? validate(line) : null}
+          error={showErrors ? validate(line, !!shared.group) : null}
+          people={people}
+          paid={shared.paid ?? {}}
+          onPaid={(who, v) => setShared((s) => ({ ...s, paid: { ...(s.paid ?? {}), [personKey(who)]: v } }))}
           wine={wineById.get(line.wineId)}
           canRemove={lines.length > 1 && line.state !== "saved" && !busy}
           onRemove={() => setLines((ls) => ls.filter((l) => l.key !== line.key))}
@@ -321,10 +441,22 @@ export default function PurchaseForm() {
         />
       ))}
 
-      {!allSaved && (
+      {!allSaved && !linesDone && (
         <button type="button" className="add-line" disabled={busy} onClick={() => setLines((ls) => [...ls, blankLine()])}>
           + Add another wine
         </button>
+      )}
+
+      {shared.group && <SplitSummary
+          lines={lines}
+          shared={shared}
+          wineById={wineById}
+          onPaid={shared.groupSaved ? undefined : (who, v) => setShared((s) => ({ ...s, paid: { ...(s.paid ?? {}), [personKey(who)]: v } }))}
+        />}
+      {shared.group && linesDone && !shared.groupSaved && (
+        <p className="notice">
+          Your bottles are saved. <button className="primary small" disabled={busy} onClick={() => void saveGroupRecord(shared.groupId ?? newGroupId())}>Save the Group Buy record</button>
+        </p>
       )}
 
       <div className="save-bar purchase-bar">
@@ -338,9 +470,13 @@ export default function PurchaseForm() {
         {allSaved ? (
           <div className="purchase-done">
             <button onClick={discard}>Add another purchase</button>
-            <button className="primary" onClick={() => { discard(); go("cellar"); }}>Done: back to Cellar</button>
+            {shared.group ? (
+              <button className="primary" onClick={() => { discard(); go("groupbuys"); }}>Done: see Group Buys</button>
+            ) : (
+              <button className="primary" onClick={() => { discard(); go("cellar"); }}>Done: back to Cellar</button>
+            )}
           </div>
-        ) : (
+        ) : linesDone ? null : (
           <button className="primary" disabled={busy || pending.length === 0} onClick={() => void saveAll()}>
             {busy ? "Saving…" : `Save ${pending.length} line${pending.length === 1 ? "" : "s"}`}
           </button>
@@ -359,12 +495,15 @@ export default function PurchaseForm() {
 // ---- one line ---------------------------------------------------------------------
 
 function LineCard({
-  index, line, shared, error, wine, canRemove, onRemove, onChange, onField, onSameProducer,
+  index, line, shared, error, people, paid, onPaid, wine, canRemove, onRemove, onChange, onField, onSameProducer,
 }: {
   index: number;
   line: Line;
   shared: Shared;
   error: string | null;
+  people: string[];
+  paid: Record<string, boolean>;
+  onPaid: (who: string, v: boolean) => void;
   wine: Wine | undefined;
   canRemove: boolean;
   onRemove: () => void;
@@ -444,7 +583,19 @@ function LineCard({
 
           <div className="row-2 line-qty">
             <Label text="Bottles">
-              <Stepper value={line.bottles} min={1} max={120} onChange={(n) => onChange({ bottles: n })} />
+              <Stepper
+                value={line.bottles}
+                min={1}
+                max={120}
+                onChange={(n) => {
+                  // In a group buy, extra or fewer bottles change your share.
+                  if (!shared.group) return onChange({ bottles: n });
+                  const s = { ...splitOf(line) };
+                  const others = Object.entries(s).filter(([k]) => !isMe(k)).reduce((a, [, v]) => a + v, 0);
+                  s[ME] = Math.max(0, n - others);
+                  onChange({ bottles: n, split: s });
+                }}
+              />
             </Label>
             <Label text={`Price per bottle${shared.beforeGst ? " (before GST)" : ""}`}>
               <input
@@ -460,6 +611,7 @@ function LineCard({
               {converted !== null && <span className="muted small">→ {formatPrice(converted, config.currency)} after GST</span>}
             </Label>
           </div>
+          {shared.group && <SplitEditor line={line} people={people} paid={paid} onPaid={onPaid} disabled={locked} onChange={(split) => onChange({ split })} />}
           {line.kind === "new" && !locked && (
             <button type="button" className="link" onClick={onSameProducer}>+ Same producer, another wine</button>
           )}
@@ -570,5 +722,131 @@ function Label({ text, children }: { text: string; children: ReactNode }) {
       <span>{text}</span>
       {children}
     </div>
+  );
+}
+
+// ---- group buy: who takes how many ------------------------------------------------
+
+function SplitEditor({
+  line, people, paid, onPaid, disabled, onChange,
+}: {
+  line: Line;
+  people: string[];
+  paid: Record<string, boolean>;
+  onPaid: (who: string, v: boolean) => void;
+  disabled: boolean;
+  onChange: (s: Record<string, number>) => void;
+}) {
+  const [adding, setAdding] = useState(false);
+  const [name, setName] = useState("");
+  const [paidNow, setPaidNow] = useState(false);
+  const split = splitOf(line);
+  const total = Object.values(split).reduce((s, n) => s + n, 0);
+  const names = [ME, ...Object.keys(split).filter((k) => !isMe(k))];
+  const set = (who: string, n: number) => onChange({ ...split, [who]: Math.max(0, n) });
+  const add = () => {
+    const nm = name.trim();
+    if (!nm || isMe(nm)) return;
+    const existing = Object.keys(split).find((k) => k.toLowerCase() === nm.toLowerCase());
+    // A new person takes a bottle from your share, if you have one.
+    if (!existing) onChange({ ...split, [ME]: Math.max(0, (split[ME] ?? 0) - 1), [nm]: (split[ME] ?? 0) > 0 ? 1 : 0 });
+    if (paidNow) onPaid(existing ?? nm, true);
+    setName("");
+    setPaidNow(false);
+    setAdding(false);
+  };
+  const id = `dl-people-${line.key}`;
+  return (
+    <div className="split-edit">
+      <div className="split-chips">
+        {names.map((who) => (
+          <span key={who} className={`split-chip${isMe(who) ? " me" : ""}`}>
+            <b>{who}</b>
+            {!isMe(who) && paid[personKey(who)] && <em className="split-paid" title="Paid">✓ paid</em>}
+            <button type="button" disabled={disabled || (split[who] ?? 0) <= 0} onClick={() => set(who, (split[who] ?? 0) - 1)} aria-label={`One fewer for ${who}`}>−</button>
+            <span>{split[who] ?? 0}</span>
+            <button type="button" disabled={disabled} onClick={() => set(who, (split[who] ?? 0) + 1)} aria-label={`One more for ${who}`}>+</button>
+          </span>
+        ))}
+        {!disabled && !adding && (
+          <button type="button" className="split-add" onClick={() => setAdding(true)}>+ Person</button>
+        )}
+      </div>
+      {adding && (
+        <div className="split-new">
+          <input
+            value={name}
+            list={id}
+            placeholder="Name"
+            autoFocus
+            onChange={(e) => setName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                add();
+              }
+            }}
+          />
+          <datalist id={id}>{people.filter((p) => !names.some((n) => n.toLowerCase() === p.toLowerCase())).map((p) => <option key={p} value={p} />)}</datalist>
+          <label className="split-paid-check">
+            <input type="checkbox" checked={paidNow} onChange={(e) => setPaidNow(e.target.checked)} /> Paid
+          </label>
+          <button type="button" className="primary small" onClick={add}>Add</button>
+          <button type="button" className="link" onClick={() => { setAdding(false); setName(""); }}>Cancel</button>
+        </div>
+      )}
+      <p className={`small ${total === line.bottles ? "ok" : "warn"}`}>
+        {total === line.bottles ? `✓ All ${line.bottles} bottles split` : `${total} of ${line.bottles} bottles split`}
+      </p>
+    </div>
+  );
+}
+
+/** Per person: bottles and what they owe (you: what goes to your cellar). */
+function SplitSummary({
+  lines, shared, wineById, onPaid,
+}: { lines: Line[]; shared: Shared; wineById: Map<string | null, Wine>; onPaid?: (who: string, v: boolean) => void }) {
+  const per = new Map<string, { bottles: number; amount: number; unpriced: boolean }>();
+  for (const l of lines) {
+    if (l.kind === "pick") continue;
+    const price = storedPrice(l.price, shared.beforeGst) ?? (l.kind === "existing" ? wineById.get(l.wineId)?.price ?? null : null);
+    for (const [who, n] of Object.entries(splitOf(l))) {
+      if (n <= 0) continue;
+      const key = isMe(who) ? ME : who;
+      const p = per.get(key) ?? { bottles: 0, amount: 0, unpriced: false };
+      p.bottles += n;
+      if (price === null) p.unpriced = true;
+      else p.amount += price * n;
+      per.set(key, p);
+    }
+  }
+  if (!per.size) return null;
+  const money = (n: number) => formatPrice(Math.round(n * 100) / 100, config.currency);
+  const rows = [...per].sort(([a], [b]) => (isMe(a) ? -1 : isMe(b) ? 1 : a.localeCompare(b)));
+  return (
+    <section className="card note-section split-summary">
+      <h3>Split</h3>
+      {rows.map(([who, p]) => (
+        <div key={who} className="split-sum-row">
+          <span>{who}</span>
+          <span className="muted small split-sum-text">
+            {p.bottles} bottle{p.bottles === 1 ? "" : "s"} · {money(p.amount)}
+            {p.unpriced ? " + unpriced" : ""}
+            {isMe(who) ? ` → your cellar${shared.nya ? " (not yet arrived)" : ""}` : shared.paid?.[personKey(who)] ? " paid" : " owed"}
+          </span>
+          {!isMe(who) && (
+            <button
+              type="button"
+              className={`gb-tick${shared.paid?.[personKey(who)] ? " on" : ""}`}
+              disabled={!onPaid}
+              aria-pressed={!!shared.paid?.[personKey(who)]}
+              onClick={() => onPaid?.(who, !shared.paid?.[personKey(who)])}
+            >
+              {shared.paid?.[personKey(who)] ? "✓ Paid" : "Paid?"}
+            </button>
+          )}
+        </div>
+      ))}
+    </section>
   );
 }

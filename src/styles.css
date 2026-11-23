@@ -18,6 +18,9 @@
   --badge-bg: #fff4d6;
   --badge-ink: #6b4d00;
   --mark: #ffe58a;
+  --dock-bg: #efe7dc;
+  /* Room kept at the bottom for the tab dock on phones (0 on wider screens). */
+  --dock-space: 0px;
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   color-scheme: light;
 }
@@ -42,6 +45,7 @@
   --badge-bg: #3a2e18;
   --badge-ink: #e6c98a;
   --mark: #6b5200;
+  --dock-bg: #2a201d;
   color-scheme: dark;
 }
 
@@ -59,7 +63,17 @@ a { color: var(--accent); }
   margin: 0; font-family: "Cormorant Garamond", "EB Garamond", Georgia, serif;
   font-weight: 600; font-size: 1.75rem; line-height: 1; color: var(--accent); letter-spacing: 0.04em;
 }
-.topbar { border-bottom-color: var(--gold); }
+.topbar { border-bottom-color: var(--gold); padding: 10px 0; }
+.topbar h1 a { display: block; line-height: 0; }
+/* The halffulldrinkup logo (brand.tsx): claret and gold; ivory and gold in dark mode. */
+.brand-logo { display: block; overflow: visible; --b-ink: #5e1324; --b-wine: #5e1324; --b-gold: #a8844a; }
+:root[data-theme="dark"] .brand-logo { --b-ink: #f2ebe3; --b-wine: #c9a35e; --b-gold: #c9a35e; }
+.brand-logo .b-glass { stroke: var(--b-ink); }
+.brand-logo .b-wine { fill: var(--b-wine); }
+.brand-logo .b-line { stroke: var(--b-gold); }
+.brand-logo .b-dot { fill: var(--b-gold); }
+.brand-logo .b-top { font-family: Jost, system-ui, sans-serif; font-weight: 400; fill: var(--b-ink); }
+.brand-logo .b-bottom { font-family: "Playfair Display", Georgia, serif; font-style: italic; font-weight: 500; fill: var(--b-gold); }
 .topbar-right { display: flex; align-items: center; gap: 10px; }
 .theme-toggle {
   display: inline-flex; align-items: center; justify-content: center; flex: none;
@@ -133,6 +147,19 @@ button.link { border: none; background: none; color: var(--accent); padding: 4px
   border-bottom: 3px solid transparent; white-space: nowrap;
 }
 .tabs a.on { color: var(--accent); border-bottom-color: var(--accent); }
+/* The tabs as a dock of pills: the current page is a claret pill (gold in dark mode).
+   On a computer it sits under the title; on a phone it floats at the bottom. */
+.tabs.dock {
+  gap: 2px; padding: 5px; border-radius: 22px; background: var(--dock-bg); border-bottom: none; overflow: visible;
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+.tabs.dock a {
+  flex: 1 1 0; display: flex; align-items: center; justify-content: center; gap: 6px; min-width: 0;
+  padding: 7px 10px; border-radius: 17px; border-bottom: none; font-size: 0.88rem; color: var(--muted);
+  transition: background 0.15s, color 0.15s;
+}
+.tabs.dock a span { overflow: hidden; text-overflow: ellipsis; }
+.tabs.dock a.on { background: var(--accent); color: var(--accent-ink); }
 
 .banner { border-radius: 8px; padding: 8px 12px; margin-bottom: 12px; font-weight: 600; font-size: 0.9rem; }
 .banner.test { background: #fff4d6; color: #6b4d00; }
@@ -538,6 +565,46 @@ button.compare-btn { letter-spacing: 0; padding: 0 12px; font-size: 0.88rem; fle
 .add-actions { position: sticky; bottom: -24px; background: var(--surface); padding: 10px 0 4px; margin-bottom: -4px; }
 .add-actions .primary { flex: 1; }
 
+/* ---- group buys --------------------------------------------------------------- */
+.split-edit { margin-top: 10px; }
+.split-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.split-chip { display: inline-flex; align-items: center; gap: 4px; border: 1px solid var(--border); border-radius: 999px; padding: 3px 4px 3px 10px; font-size: 0.88rem; }
+.split-chip.me { border-color: var(--accent); color: var(--accent); }
+.split-chip button { width: 26px; height: 26px; padding: 0; border-radius: 50%; font-size: 0.95rem; line-height: 1; }
+.split-chip span { min-width: 1.4em; text-align: center; font-weight: 700; }
+.split-add { border-style: dashed; border-radius: 999px; padding: 4px 12px; font-size: 0.85rem; }
+.split-new { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
+.split-new input { flex: 1; min-width: 0; font: inherit; padding: 7px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); }
+.split-edit .small { margin: 6px 0 0; }
+.split-summary h3 { margin: 0 0 6px; }
+.split-sum-row { display: flex; justify-content: space-between; gap: 10px; padding: 4px 0; border-top: 1px solid var(--border); }
+.split-sum-row:first-of-type { border-top: none; }
+.gb-tiles { display: flex; gap: 8px; margin-bottom: 10px; }
+.gb-tile { flex: 1; display: flex; flex-direction: column; gap: 2px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; }
+.gb-tile b { font-size: 1.3rem; color: var(--accent); }
+.gb-tabs { margin-bottom: 8px; }
+.gb-order { display: block; text-decoration: none; color: inherit; padding: 10px 12px; margin-bottom: 8px; }
+.gb-row { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.gb-prog { display: flex; gap: 12px; color: var(--muted); margin-top: 4px; }
+.gb-prog b { color: var(--text); }
+.gb-h { margin: 0 0 4px; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--accent); }
+.gb-line { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 8px 0; border-top: 1px solid var(--border); }
+.gb-line:first-of-type { border-top: none; }
+.gb-line-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.gb-edit { align-self: flex-start; padding: 0; }
+.gb-tick { flex: none; border-radius: 999px; padding: 6px 12px; font-size: 0.85rem; }
+.gb-tick.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.gb-person .gb-wines { display: flex; flex-direction: column; gap: 1px; margin: 4px 0 8px; }
+.gb-person .gb-wines em { font-style: normal; opacity: 0.8; }
+.gb-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.gb-done { padding: 6px 0; border-top: 1px solid var(--border); }
+
+.gb-sub { margin: -6px 0 10px; }
+.gb-rename { margin-bottom: 6px; }
+.split-paid { font-style: normal; font-size: 0.72rem; color: var(--ok, #3b7d4f); margin-left: 2px; }
+.split-paid-check { display: inline-flex; align-items: center; gap: 4px; font-size: 0.85rem; white-space: nowrap; }
+.split-sum-row { align-items: center; }
+.split-sum-text { flex: 1; text-align: right; }
 /* ---- add a purchase ------------------------------------------------------ */
 .line-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .line-head h3 { text-transform: none; letter-spacing: 0; font-size: 1rem; color: var(--text); }
@@ -678,7 +745,7 @@ body.has-toast .to-top { bottom: 84px; }
 .foot .link { font-size: inherit; margin-left: 12px; }
 /* Installed on a phone: keep clear of the notch and home indicator. */
 @media (display-mode: standalone) {
-  .app { padding-top: env(safe-area-inset-top); padding-bottom: calc(32px + env(safe-area-inset-bottom)); }
+  .app { padding-top: env(safe-area-inset-top); padding-bottom: calc(32px + env(safe-area-inset-bottom) + var(--dock-space)); }
 }
 
 /* ---- bottle history + overview -------------------------------------------- */
@@ -920,3 +987,32 @@ button.bar-row:hover { background: var(--chip); }
 .rs-done h3 { margin: 0 0 4px; }
 .rs-rename { margin: 4px 0 8px; }
 .rs-rename p { margin: 0 0 4px; }
+
+/* The dock lives in the header: one row with the logo on wide screens, its own row on mid-size screens.
+   (On phones it's fixed to the bottom, below.) */
+.topbar { flex-wrap: wrap; row-gap: 10px; }
+.topbar .tabs.dock { margin: 0; }
+@media (min-width: 721px) and (max-width: 979px) {
+  .topbar .tabs.dock { order: 3; flex-basis: 100%; }
+}
+@media (min-width: 980px) {
+  .topbar .tabs.dock { flex: 0 1 auto; }
+  .topbar .tabs.dock a { flex: 0 0 auto; }
+}
+/* Phones: the tab dock floats at the bottom. Kept last so it wins over the bottom bars' own rules. */
+@media (max-width: 720px) {
+  :root { --dock-space: calc(80px + env(safe-area-inset-bottom)); }
+  .tabs.dock {
+    position: fixed; z-index: 40; left: 10px; right: 10px; bottom: calc(8px + env(safe-area-inset-bottom));
+    max-width: 520px; margin: 0 auto;
+    box-shadow: inset 0 0 0 1px var(--border), 0 6px 20px rgba(0, 0, 0, 0.14);
+  }
+  .tabs.dock a { flex-direction: column; gap: 1px; padding: 6px 1px 5px; font-size: 0.68rem; font-weight: 600; }
+  .tabs.dock a span { max-width: 100%; white-space: nowrap; }
+  /* Keep everything that sits at the bottom clear of the dock. */
+  .app { padding-bottom: calc(var(--dock-space) + 24px); }
+  .save-bar, .select-bar, .rs-savebar { bottom: var(--dock-space); }
+  .toast { bottom: calc(var(--dock-space) + 6px); }
+  .to-top { bottom: calc(var(--dock-space) + 10px); }
+  body.has-toast .to-top { bottom: calc(var(--dock-space) + 76px); }
+}

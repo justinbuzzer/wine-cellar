@@ -24,6 +24,8 @@ import { toSale, type Sale } from "./salesmodel";
 import { readDrafts, toDraft, type Draft } from "./drafts";
 import { readSettings, SETTINGS_TABLE } from "./settings";
 import { layoutFromRows, type Layout } from "./spots";
+import { readGroupBuys } from "./groupbuys";
+import { toGbRow, type GbRow } from "./groupbuymodel";
 
 export interface WorkbookData {
   file: DriveItem;
@@ -50,6 +52,8 @@ export interface WorkbookData {
   drafts: Draft[];
   /** K Cellars boxes and Home racks (Settings page; empty until set up). */
   layout: Layout;
+  /** Group buys split with friends (the "GroupBuys" table; empty until the first). */
+  groupBuys: GbRow[];
 }
 
 export function describeError(e: unknown): string {
@@ -71,13 +75,14 @@ export function describeError(e: unknown): string {
 export async function loadWorkbook(file: DriveItem): Promise<WorkbookData> {
   const wb = Workbook.reader(file.id);
   const start = performance.now();
-  const [inv, tas, hist, sold, drafts, settings, ...lists] = await Promise.all([
+  const [inv, tas, hist, sold, drafts, settings, groups, ...lists] = await Promise.all([
     timed(() => wb.readTable(config.tables.inventory)),
     timed(() => wb.readTable(config.tables.tastings)),
     timed(() => readHistory(wb)),
     timed(() => readSales(wb)),
     timed(() => readDrafts(wb)),
     timed(() => readSettings(wb)),
+    timed(() => readGroupBuys(wb)),
     ...config.lists.map((n) => timed(() => wb.readNamedList(n))),
   ]);
   const invTable = toTable(inv.value.values);
@@ -91,6 +96,7 @@ export async function loadWorkbook(file: DriveItem): Promise<WorkbookData> {
     hasSales: sold.value !== null,
     drafts: rowsOf(drafts.value).map(toDraft).filter((d) => d.draftId),
     layout: layoutFromRows(rowsOf(settings.value)),
+    groupBuys: rowsOf(groups.value).map(toGbRow).filter((r) => r.rowId && r.groupId),
     file,
     wines: invTable.rows.map(toWine),
     tastings: tasTable.rows.map(toTasting),
@@ -104,6 +110,7 @@ export async function loadWorkbook(file: DriveItem): Promise<WorkbookData> {
       { label: `Table "${config.tables.sales}"${sold.value ? "" : " (not created yet)"}`, ms: sold.ms },
       { label: `Table "${config.tables.drafts}"${drafts.value ? "" : " (not created yet)"}`, ms: drafts.ms },
       { label: `Table "${SETTINGS_TABLE}"${settings.value ? "" : " (not created yet)"}`, ms: settings.ms },
+      { label: `Table "GroupBuys"${groups.value ? "" : " (not created yet)"}`, ms: groups.ms },
       { label: `${config.lists.length} dropdown lists (slowest)`, ms: Math.max(...lists.map((l) => l.ms)) },
     ],
     totalMs: Math.round(performance.now() - start),
@@ -127,6 +134,8 @@ interface Store {
   putDraft(d: Draft): void;
   removeDraft(draftId: string): void;
   putLayout(l: Layout): void;
+  /** Replace the group buy rows after a write (writes return them all). */
+  putGroupBuys(rows: GbRow[]): void;
   changeFile(): void;
 }
 
@@ -153,7 +162,7 @@ type Sync =
   | { state: "failed"; savedAt: number; message: string };
 
 /** Bump when WorkbookData changes shape, so an old offline copy is ignored. */
-const SNAPSHOT_VERSION = 4;
+const SNAPSHOT_VERSION = 5;
 
 function snapshotKey(): string {
   return `v${SNAPSHOT_VERSION}:${import.meta.env.MODE}:${msal.getActiveAccount()?.homeAccountId ?? "none"}`;
@@ -356,6 +365,7 @@ export function WorkbookGate({ children }: { children: ReactNode }) {
         p.kind !== "loaded" ? p : { kind: "loaded", data: { ...p.data, drafts: p.data.drafts.filter((x) => x.draftId !== id) } },
       ),
     putLayout: (l) => setPhase((p) => (p.kind !== "loaded" ? p : { kind: "loaded", data: { ...p.data, layout: l } })),
+    putGroupBuys: (rows) => setPhase((p) => (p.kind !== "loaded" ? p : { kind: "loaded", data: { ...p.data, groupBuys: rows } })),
     changeFile: () => {
       storeItemId(null);
       void search();
