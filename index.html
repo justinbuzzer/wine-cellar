@@ -20,6 +20,9 @@
         var t = localStorage.getItem("wine-cellar.theme");
         if (t !== "light" && t !== "dark") t = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
         document.documentElement.setAttribute("data-theme", t);
+        // Text size chosen in Settings on this device (see src/textsize.ts).
+        var z = { xs: "82%", s: "90%", l: "110%", xl: "120%" }[localStorage.getItem("wine-cellar.textSize")];
+        if (z) document.documentElement.style.fontSize = z;
       } catch (e) {}
     </script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />

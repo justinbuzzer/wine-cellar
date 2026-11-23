@@ -7,6 +7,7 @@ import {
 } from "../spots";
 import { describeError, useWorkbook } from "../store";
 import { useToast } from "../ui";
+import { getTextSize, setTextSize, TEXT_SIZES, type TextSizeKey } from "../textsize";
 
 export default function Settings() {
   const { data, putLayout } = useWorkbook();
@@ -38,6 +39,11 @@ export default function Settings() {
       <a className="back" href={href("cellar")}>← Cellar</a>
       <h2 className="st-title">Settings</h2>
 
+      <h3 className="set-group">Display</h3>
+      <TextSizeCard />
+
+      <h3 className="set-group">Storage layout</h3>
+      <p className="muted small set-group-note">Your K Cellars boxes and Home fridge racks. Saved in your workbook, so every device uses the same layout.</p>
       <section className="card">
         <div className="card-head">
           <h2>K Cellars boxes</h2>
@@ -110,11 +116,44 @@ export default function Settings() {
         </p>
       )}
 
-      <div className="save-bar">
-        <button className="primary" disabled={busy || !changed} onClick={() => void save()}>{busy ? "Saving…" : "Save layout"}</button>
-        <span className="muted small">Saved on an “{SETTINGS_SHEET}” sheet in your workbook, so every device uses it.</span>
-      </div>
+      {/* Only while the storage layout has unsaved changes (text size applies straight away). */}
+      {changed && (
+        <div className="save-bar">
+          <button className="primary" disabled={busy} onClick={() => void save()}>{busy ? "Saving…" : "Save layout"}</button>
+          <button className="link" disabled={busy} onClick={() => setF(data.layout)}>Undo changes</button>
+          <span className="muted small">Saved on an “{SETTINGS_SHEET}” sheet in your workbook.</span>
+        </div>
+      )}
     </>
+  );
+}
+
+/** Text size for this device: applies straight away, no Save needed. */
+function TextSizeCard() {
+  const [size, setSize] = useState<TextSizeKey>(getTextSize());
+  return (
+    <section className="card">
+      <h2>Text size</h2>
+      <p className="muted small set-note">Smaller text fits more wines and notes on screen. Just for this device; your phone and computer can differ.</p>
+      <div className="text-sizes" role="radiogroup" aria-label="Text size">
+        {TEXT_SIZES.map((s) => (
+          <button
+            key={s.key}
+            type="button"
+            role="radio"
+            aria-checked={size === s.key}
+            className={size === s.key ? "on" : ""}
+            onClick={() => {
+              setTextSize(s.key);
+              setSize(s.key);
+            }}
+          >
+            <span className="ts-a" style={{ fontSize: `${(s.pct / 100) * 1.15}rem` }}>A</span>
+            <span className="ts-l">{s.label}</span>
+          </button>
+        ))}
+      </div>
+    </section>
   );
 }
 
