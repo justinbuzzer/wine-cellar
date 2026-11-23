@@ -84,6 +84,12 @@ function saveDraft(d: { shared: Shared; lines: Line[] } | null) {
   }
 }
 
+/** Asking prices to start the next Sell with (from a sale list), by WineID. Used once. */
+let asked: Record<string, number> = {};
+export function presetAsking(prices: Record<string, number>) {
+  asked = prices;
+}
+
 export default function SellForm({ preselect }: { preselect?: string }) {
   const { data, putWine, putSale, removeSale } = useWorkbook();
   const toast = useToast();
@@ -97,7 +103,7 @@ export default function SellForm({ preselect }: { preselect?: string }) {
       wineId: w.wineId ?? "",
       from: at.includes("K Cellars") ? "K Cellars" : at[0] ?? "K Cellars",
       bottles: 1,
-      price: "",
+      price: asked[w.wineId ?? ""] !== undefined ? String(asked[w.wineId ?? ""]) : "",
       paid: w.price !== null ? String(w.price) : "",
       year: year !== null ? String(year) : "",
       state: "idle",
@@ -116,6 +122,10 @@ export default function SellForm({ preselect }: { preselect?: string }) {
     const d = loadDraft();
     return d ? { ...d, restored: true } : { shared: { date: todayIso(), buyer: "", notes: "" }, lines: [] as Line[], restored: false };
   });
+  // Asking prices are only for the lines this Sell started with.
+  useEffect(() => {
+    asked = {};
+  }, []);
   const [shared, setShared] = useState<Shared>(initial.shared);
   const [lines, setLines] = useState<Line[]>(initial.lines);
   const [restored, setRestored] = useState(initial.restored);

@@ -117,3 +117,21 @@ export async function removeLog(wb: Workbook, spec: Pick<LogSpec, "table" | "idH
     await wb.deleteRange(snap.address.sheet, rowRange(snap, i - 1));
   }
 }
+
+/**
+ * Removes several rows in one pass (one read, then deletes from the bottom up so
+ * the row positions stay right). A table keeps its last row, blanked.
+ */
+export async function removeLogs(wb: Workbook, spec: Pick<LogSpec, "table" | "idHeader">, ids: string[]): Promise<void> {
+  if (!ids.length) return;
+  const snap = await readLog(wb, spec.table);
+  if (!snap) return;
+  const idCol = headersOf(snap.values[0]).indexOf(spec.idHeader);
+  const want = new Set(ids);
+  const hits = snap.values.map((r, k) => (k > 0 && want.has(String(r[idCol] ?? "")) ? k : -1)).filter((k) => k > 0);
+  const body = snap.values.length - 1;
+  // Every row going: keep the first (blanked) so the table survives.
+  const keep = hits.length === body ? hits.shift() : undefined;
+  for (const k of hits.sort((a, b) => b - a)) await wb.deleteRange(snap.address.sheet, rowRange(snap, k - 1));
+  if (keep !== undefined) await wb.writeValues(snap.address.sheet, rowRange(snap, keep - 1), [snap.values[0].map(() => "")]);
+}

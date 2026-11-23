@@ -240,6 +240,13 @@ button.small { padding: 6px 12px; }
   background: var(--bg); border-top: 1px solid var(--gold); padding: 12px 64px 12px 0; margin-top: 10px;
 }
 .select-bar > span { flex: 1; min-width: 140px; }
+/* Move / For sale / Sell share one row, even on a phone. */
+.select-bar > .select-actions { display: flex; flex-wrap: wrap; gap: 6px; flex: 1 1 100%; min-width: 0; }
+.select-actions button { flex: 1 1 auto; padding-left: 6px; padding-right: 6px; white-space: nowrap; font-size: 0.9rem; }
+@media (min-width: 721px) {
+  .select-bar > .select-actions { flex: 0 1 auto; }
+  .select-actions button { flex: none; padding-left: 12px; padding-right: 12px; }
+}
 .line-total { margin: 8px 0 0; }.sell-picker { margin-bottom: 12px; }
 .wc-top { display: flex; align-items: center; gap: 8px; }
 .wc-producer { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); flex: 1; }
@@ -919,13 +926,19 @@ button.col-tip { cursor: pointer; }
 .unused-logo select { max-width: 100%; margin-top: 4px; }
 
 @media print {
-  @page { size: A4; margin: 16mm 16mm 18mm; @bottom-center { content: counter(page); font-family: Georgia, serif; font-size: 9pt; color: #777; } }
+  /* No page margins: browsers only print their own header (page title, date and time) and footer
+     (web address, page number) in the margins, so with none they leave them out. The white space
+     comes from the list's padding instead, repeated on every page (box-decoration-break). */
+  @page { size: A4; margin: 0; }
   /* Always print black on white, whichever theme is on screen. */
   :root, :root[data-theme="dark"] { --bg: #fff; --surface: #fff; --text: #111; --muted: #555; --border: #ccc; --accent: #5e1324; --gold: #a8844a; color-scheme: light; }
   body { background: #fff; color: #111; }
   .topbar, .tabs, .foot, .banner, .notice, .toast, .wl-controls, .wl-jump, .to-top, .sheet-backdrop { display: none !important; }
   .app { max-width: none; padding: 0; }
-  .winelist { border: none; border-radius: 0; padding: 0; font-size: 10.5pt; }
+  .winelist {
+    border: none; border-radius: 0; padding: 16mm 16mm 18mm; font-size: 10.5pt;
+    -webkit-box-decoration-break: clone; box-decoration-break: clone;
+  }
   .wl-header { margin-bottom: 18pt; }
   .wl-section { margin-top: 0; break-before: page; }
   .wl-section:first-of-type { break-before: auto; margin-top: 12pt; }
@@ -1045,4 +1058,37 @@ button.col-tip { cursor: pointer; }
   .toast { bottom: calc(var(--dock-space) + 6px); }
   .to-top { bottom: calc(var(--dock-space) + 10px); }
   body.has-toast .to-top { bottom: calc(var(--dock-space) + 76px); }
+}
+
+/* Sale lists (Wine list tab): pick wines, set offered bottles and asking prices, print for buyers. */
+.list-modes { margin-bottom: 10px; }
+.print-only { display: none; }
+.sl-when { flex: none; }
+.sl-top { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; }
+.sl-top .sl-mode { flex: 1; margin-bottom: 0; }
+.sl-rule { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 0.6rem 1rem; font-size: 0.9rem; }
+.sl-rule input { width: 3.2rem; text-align: right; }
+.sl-rule select { width: auto; }
+.sl-rule button { margin-left: auto; }
+.sl-line { padding: 0.55rem 0; border-top: 1px solid var(--border); }
+.sl-line:first-child { border-top: none; padding-top: 0; }
+.sl-line-top { display: flex; gap: 6px; align-items: baseline; }
+.sl-line-top .dot { flex: none; }
+.sl-wine { flex: 1; min-width: 0; }
+.sl-line-row { display: flex; align-items: center; gap: 8px; margin: 4px 0 2px; flex-wrap: wrap; }
+.sl-line-row .st-step { margin: 0; }
+.sl-price { display: flex; align-items: center; gap: 4px; margin-left: auto; }
+.sl-price input { width: 5.5rem; text-align: right; }
+.sl-gain { color: var(--ok); }
+.sl-add { margin-top: 0.6rem; }
+.sl-totals { margin: 0 2px 12px; }
+.sl-actions { display: flex; gap: 12px; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+.sl-note { font-style: italic; margin-top: 4px; }
+.sl-sheet .wl-price.none { font-style: italic; color: var(--muted); }
+.sl-foot { text-align: center; color: var(--muted); font-size: 0.85rem; margin-top: 1.2rem; }
+@media print {
+  .print-only { display: block !important; }
+  .list-modes, .sl-top, .sl-editor, .sl-options, .save-bar, .select-bar, .back { display: none !important; }
+  /* A sale list is short: no new page for each type. */
+  .sl-sheet .wl-section { break-before: auto !important; margin-top: 12pt; }
 }

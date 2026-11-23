@@ -9,6 +9,7 @@ import { useStocktake } from "../stocktake";
 import { bottles, FilterHeader, restoreListPosition, TypeDot, useLongPress } from "../ui";
 import { sellable } from "./SellForm";
 import { MoveSheet } from "./SpotPicker";
+import { ForSaleSheet } from "./SaleLists";
 import { vintageBucket, vintageBuckets } from "../overview";
 import { spendOn } from "../spend";
 
@@ -145,6 +146,8 @@ export default function Cellar() {
   const hold = useLongPress();
   const [picked, setPicked] = useState<Set<string> | null>(null);
   const [moving, setMoving] = useState<Wine[] | null>(null);
+  /** Wines picked to put on a sale list. */
+  const [listing, setListing] = useState<string[] | null>(null);
   const toggle = (id: string) =>
     setPicked((p) => {
       const s = new Set(p);
@@ -330,11 +333,21 @@ export default function Cellar() {
             <strong>{picked.size}</strong> wine{picked.size === 1 ? "" : "s"} · {bottles(pickedBottles)} in stock
           </span>
           <button type="button" className="link" onClick={() => setPicked(null)}>Cancel</button>
-          <button type="button" onClick={() => setMoving(data.wines.filter((w) => picked.has(w.wineId ?? "")))}>⇄ Move</button>
-          <button type="button" className="primary" onClick={() => go(`sell/${[...picked].join(",")}`)}>
-            💰 Sell {picked.size} wine{picked.size === 1 ? "" : "s"}
-          </button>
+          <span className="select-actions">
+            <button type="button" onClick={() => setMoving(data.wines.filter((w) => picked.has(w.wineId ?? "")))}>⇄ Move</button>
+            <button type="button" onClick={() => setListing([...picked])}>🏷️ For sale</button>
+            <button type="button" className="primary" onClick={() => go(`sell/${[...picked].join(",")}`)}>💰 Sell {picked.size}</button>
+          </span>
         </div>
+      )}
+      {listing && (
+        <ForSaleSheet
+          ids={listing}
+          onClose={() => {
+            setListing(null);
+            setPicked(null);
+          }}
+        />
       )}
       {moving && (
         <MoveSheet

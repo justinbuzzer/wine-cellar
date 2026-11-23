@@ -9,6 +9,7 @@ import Cellar from "./views/Cellar";
 import Diagnostics from "./views/Diagnostics";
 import WineDetail from "./views/WineDetail";
 import WineForm from "./views/WineForm";
+import SaleLists from "./views/SaleLists";
 import WineList from "./views/WineList";
 import PurchaseForm from "./views/PurchaseForm";
 import SellForm from "./views/SellForm";
@@ -122,7 +123,9 @@ function Shell({ account, tabs, children }: { account?: AccountInfo; tabs?: bool
         ? "notes"
         : route[0] === "history" || route[0] === "producers" || route[0] === "sales"
           ? "overview"
-          : route[0];
+          : route[0] === "forsale"
+            ? "list"
+            : route[0];
   const page = route[0] ?? "cellar";
   const isListPage = page === "cellar" || page === "list" || page === "notes" || page === "overview" || page === "history" || page === "producers" || page === "sales" || page === "groupbuys";
   return (
@@ -223,6 +226,8 @@ function Routes() {
       return <WineForm key={`edit-${arg}`} id={arg} />;
     case "list":
       return <WineList />;
+    case "forsale":
+      return <SaleLists key={`${arg ?? ""}-${sub ?? ""}-${subArg ?? ""}`} arg={arg} sub={sub} subArg={subArg} />;
     case "notes":
       return <Notes />;
     case "overview":

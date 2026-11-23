@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { config } from "../config";
 import { formatPrice, shortName, type Wine } from "../data";
 import WineSheet from "./WineSheet";
+import { ListModes } from "./SaleLists";
 import { LOCATIONS } from "../locations";
 import { useWorkbook } from "../store";
 import { buildList, selectEntries, type GroupBy, type ListLocation } from "../winelist";
@@ -50,6 +51,7 @@ export default function WineList() {
 
   return (
     <>
+      <ListModes on="list" />
       <section className="card wl-controls">
         <div className="wl-controls-grid">
           <label className="field">
