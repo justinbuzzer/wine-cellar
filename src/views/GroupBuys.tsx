@@ -183,10 +183,19 @@ function Count({ label, n, of }: { label: string; n: number; of: number }) {
 
 /** Inside an order's expanded card: name it, mark wines arrived, change the split, and each friend's Paid / Hand over. */
 function OrderDetail({ order: o }: { order: GbOrder }) {
-  const [arriving, setArriving] = useState<GbLine | null>(null);
+  const [arriving, setArriving] = useState<GbLine[] | null>(null);
   const [editing, setEditing] = useState<GbLine | null>(null);
   const [renaming, setRenaming] = useState<string | null>(null);
   const { busy, run } = useGroupWrite();
+  const waiting = o.lines.filter((l) => !l.arrived);
+  /** Every wine still to arrive, in one go (asks where your bottles went if you have a share). */
+  const allArrived = () =>
+    waiting.some((l) => l.mine > 0 && l.wineId)
+      ? setArriving(waiting)
+      : void run(
+          { set: waiting.flatMap((l) => l.rows).map((r) => ({ rowId: r.rowId, cells: { Arrived: "Yes", "Arrived Date": today() } })) },
+          `All ${waiting.length} wines arrived.`,
+        );
   const unArrive = (l: GbLine) =>
     run({ set: l.rows.map((r) => ({ rowId: r.rowId, cells: { Arrived: "", "Arrived Date": "" } })) }, "Marked as not arrived. Your cellar wasn't changed.");
 
@@ -207,6 +216,12 @@ function OrderDetail({ order: o }: { order: GbOrder }) {
           <button className="link" onClick={() => setRenaming(null)}>Cancel</button>
         </div>
       ) : null}
+      {waiting.length > 1 && (
+        <div className="gb-row gb-all-row">
+          <span className="muted small">{waiting.length} wines still to arrive</span>
+          <button className="gb-tick gb-pill" disabled={busy} onClick={allArrived}>All arrived</button>
+        </div>
+      )}
       {o.lines.map((l) => (
         <div key={l.line} className="gb-line">
           {/* Who gets how many is in each friend's row and the Me line, so here just the wine and its total. */}
@@ -217,7 +232,7 @@ function OrderDetail({ order: o }: { order: GbOrder }) {
             disabled={busy}
             aria-pressed={l.arrived}
             title={l.mine > 0 ? "Also marks your bottles as arrived in your cellar" : undefined}
-            onClick={() => (l.arrived ? void unArrive(l) : l.mine > 0 && l.wineId ? setArriving(l) : void run({ set: l.rows.map((r) => ({ rowId: r.rowId, cells: { Arrived: "Yes", "Arrived Date": today() } })) }, "Marked as arrived."))}
+            onClick={() => (l.arrived ? void unArrive(l) : l.mine > 0 && l.wineId ? setArriving([l]) : void run({ set: l.rows.map((r) => ({ rowId: r.rowId, cells: { Arrived: "Yes", "Arrived Date": today() } })) }, "Marked as arrived."))}
           >
             {l.arrived ? "✓ Arrived" : "Arrived?"}
           </button>
@@ -237,7 +252,7 @@ function OrderDetail({ order: o }: { order: GbOrder }) {
         )}
       </div>
 
-      {arriving && <ArriveShare order={o} line={arriving} onClose={() => setArriving(null)} />}
+      {arriving && <ArriveShare order={o} lines={arriving} onClose={() => setArriving(null)} />}
       {editing && <EditSplit order={o} line={editing} onClose={() => setEditing(null)} />}
     </div>
   );
@@ -338,31 +353,41 @@ function PersonDetail({ name, orders }: { name: string; orders: GbOrder[] }) {
   );
 }
 
-/** A wine with your share arrived: where your bottles went, then mark it arrived (cellar too). */
-function ArriveShare({ order, line, onClose }: { order: GbOrder; line: GbLine; onClose: () => void }) {
+/**
+ * Wines arrived (one, or all still to arrive): where your bottles went, then mark
+ * them arrived. Your share moves to that place in the cellar and stops being
+ * "not yet arrived"; friends' bottles are just marked arrived.
+ */
+function ArriveShare({ order, lines, onClose }: { order: GbOrder; lines: GbLine[]; onClose: () => void }) {
   const { data, putWine } = useWorkbook();
   const resolveSpot = useResolveSpot();
   const { busy, run } = useGroupWrite();
-  const from: Location = line.to ?? "K Cellars";
-  const [loc, setLoc] = useState<Location>(from);
+  const mine = lines.filter((l) => l.mine > 0 && l.wineId);
+  const [loc, setLoc] = useState<Location>(mine[0]?.to ?? "K Cellars");
   const [spot, setSpot] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const wine = data.wines.find((w) => w.wineId === line.wineId);
+  const myBottles = mine.reduce((n, l) => n + l.mine, 0);
 
   async function save() {
     setError(null);
     try {
-      if (wine) {
-        const s = await resolveSpot(spot);
-        // Your bottles were added (not placed) at the purchase's location; move them if they went elsewhere.
-        const n = Math.min(line.mine, placementOf(wine, from).unplaced);
-        if (n > 0 && (loc !== from || s)) {
-          const [w] = await moveBottles(data.file.id, [{ wineId: wine.wineId!, from: { loc: from, spot: null }, to: { loc, spot: s }, n }]);
-          putWine(w);
-        }
-        if ((wine.status ?? "").toUpperCase() === "NYA") putWine(await updateWine(data.file.id, wine.wineId!, { Status: "" }));
+      const s = await resolveSpot(spot);
+      // Your bottles were added (not placed) where the purchase said; move them if they went elsewhere.
+      const moves = mine.flatMap((l) => {
+        const wine = data.wines.find((w) => w.wineId === l.wineId);
+        const from: Location = l.to ?? "K Cellars";
+        const n = wine ? Math.min(l.mine, placementOf(wine, from).unplaced) : 0;
+        return n > 0 && (loc !== from || s) ? [{ wineId: l.wineId!, from: { loc: from, spot: null }, to: { loc, spot: s }, n }] : [];
+      });
+      if (moves.length) for (const w of await moveBottles(data.file.id, moves)) putWine(w);
+      for (const l of mine) {
+        const wine = data.wines.find((w) => w.wineId === l.wineId);
+        if (wine && (wine.status ?? "").toUpperCase() === "NYA") putWine(await updateWine(data.file.id, wine.wineId!, { Status: "" }));
       }
-      const ok = await run({ set: line.rows.map((r) => ({ rowId: r.rowId, cells: { Arrived: "Yes", "Arrived Date": today() } })) }, `${lineName(line)} arrived.`);
+      const ok = await run(
+        { set: lines.flatMap((l) => l.rows).map((r) => ({ rowId: r.rowId, cells: { Arrived: "Yes", "Arrived Date": today() } })) },
+        lines.length === 1 ? `${lineName(lines[0])} arrived.` : `All ${lines.length} wines arrived.`,
+      );
       if (ok) onClose();
     } catch (e) {
       setError(describeError(e));
@@ -372,7 +397,9 @@ function ArriveShare({ order, line, onClose }: { order: GbOrder; line: GbLine; o
   return (
     <Modal title="Where are your bottles?" onClose={onClose}>
       <p className="muted small">
-        {lineName(line)}: your {bottles(line.mine)} from {orderTitle(order)}.
+        {lines.length === 1
+          ? `${lineName(lines[0])}: your ${bottles(myBottles)} from ${orderTitle(order)}.`
+          : `Your ${bottles(myBottles)} of ${mine.length} wine${mine.length === 1 ? "" : "s"} from ${orderTitle(order)}. All ${lines.length} wines will be marked arrived.`}
       </p>
       <div className="seg">
         {LOCATIONS.map((l) => (
@@ -383,7 +410,7 @@ function ArriveShare({ order, line, onClose }: { order: GbOrder; line: GbLine; o
       {error && <p className="form-errors">{error}</p>}
       <div className="actions">
         <button className="primary" disabled={busy} onClick={() => void save()}>
-          {busy ? "Saving…" : `✓ Arrived${spot && spot !== NEW_LOOSE ? ` · ${loc} ${spot}` : ` at ${loc}`}`}
+          {busy ? "Saving…" : `✓ ${lines.length === 1 ? "Arrived" : "All arrived"}${spot && spot !== NEW_LOOSE ? ` · ${loc} ${spot}` : ` at ${loc}`}`}
         </button>
       </div>
     </Modal>

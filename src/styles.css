@@ -1154,3 +1154,6 @@ body.reading .winelist { border-color: transparent; }
 /* Wine list sheet: other vintages' notes, opened in place. */
 .sheet-others-head { margin-top: 1rem; }
 .sheet-note-vintage { color: var(--text); font-weight: 600; }
+
+/* Open order: "All arrived" when two or more wines are still to arrive. */
+.gb-all-row { align-items: center; padding: 2px 0 6px; }
