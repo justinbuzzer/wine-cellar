@@ -325,6 +325,9 @@ export const STOCKTAKE_SPEC: LogSpec = {
   what: "stocktake record",
 };
 
+/** StocktakeID on rows for bottles removed from a wine page (corrections.ts): not a stocktake. */
+export const CORRECTION_ID = "Correction";
+
 /** Marks rows written by a stocktake in the Opened and Sold tables. */
 export const tagFor = (id: string) => `[${id}]`;
 
@@ -484,7 +487,7 @@ export async function readPastStocktakes(file: string): Promise<PastStocktake[]>
   const groups = new Map<string, PastStocktake & { ids: Set<string> }>();
   for (const r of rowsOf(snap)) {
     const id = str(r["StocktakeID"]);
-    if (!id) continue;
+    if (!id || id === CORRECTION_ID) continue;
     let g = groups.get(id);
     if (!g) {
       const d = r["Date"];

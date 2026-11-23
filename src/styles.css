@@ -591,10 +591,22 @@ button.compare-btn { letter-spacing: 0; padding: 0 12px; font-size: 0.88rem; fle
 .split-summary h3 { margin: 0 0 6px; }
 .split-sum-row { display: flex; justify-content: space-between; gap: 10px; padding: 4px 0; border-top: 1px solid var(--border); }
 .split-sum-row:first-of-type { border-top: none; }
-.gb-tiles { display: flex; gap: 8px; margin-bottom: 10px; }
-.gb-tile { flex: 1; display: flex; flex-direction: column; gap: 2px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; }
-.gb-tile b { font-size: 1.3rem; color: var(--accent); }
-.gb-tabs { margin-bottom: 8px; }
+/* Group Buys head: one row with the totals, Orders / People and + New. Its text grows with the
+   text size only up to Default (min(1rem, 16px)), so the row stays on one line on a phone. */
+.gb-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 10px; font-size: min(1rem, 16px); }
+.gb-stat { display: flex; flex-direction: column; line-height: 1.15; white-space: nowrap; }
+.gb-stat b { color: var(--accent); font-size: 0.92em; font-variant-numeric: tabular-nums; }
+.gb-stat i { font-style: normal; font-size: 0.66em; color: var(--muted); }
+.gb-bar .gb-tabs { flex: 0 1 auto; margin: 0 0 0 auto; gap: 3px; }
+.gb-bar .gb-tabs button { flex: none; padding: 6px 8px; font-size: 0.85em; }
+.gb-bar .gb-new { flex: none; white-space: nowrap; padding: 6px 10px; font-size: 0.85em; }
+.gb-bar > .gb-new:only-child { margin-left: auto; }
+/* An order's card opens in place (like a person's). */
+.gb-order-row .gb-chev { flex: none; align-self: center; }
+.gb-order-body { margin-top: 0.6rem; padding-top: 0.5rem; border-top: 1px solid var(--border); }
+.gb-order-tools { align-items: center; }
+.gb-order-tools .gb-h { margin: 0; }
+.gb-me-row { margin-top: 0.6rem; padding-top: 0.6rem; border-top: 1px solid var(--border); }
 .gb-order { display: block; text-decoration: none; color: inherit; padding: 10px 12px; margin-bottom: 8px; }
 .gb-row { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
 /* Order cards: name, merchant · date · total on the left; Arrived / Paid / Handed counts on the right. */
@@ -1118,3 +1130,8 @@ body.reading .winelist { border-color: transparent; }
   border: none; border-radius: 50%; background: transparent; color: var(--muted); opacity: 0.3;
 }
 .reading-exit:hover, .reading-exit:focus-visible { opacity: 0.9; background: var(--chip); }
+
+/* Wine page: − Remove bottles (why they went). */
+.rm-reasons { flex-wrap: wrap; }
+.rm-reasons button { flex: 1 1 40%; padding: 8px 6px; font-size: 0.9rem; }
+.rm-purchase { margin: 0 0 8px; }

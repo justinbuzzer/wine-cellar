@@ -29,9 +29,9 @@ const lineName = (l: Pick<GbLine, "producer" | "name" | "vintage">) =>
   [l.producer, shortName({ producer: l.producer, name: l.name }), l.vintage].filter((x) => x !== null && x !== "").join(" ");
 
 export default function GroupBuys({ view, arg }: { view?: string; arg?: string }) {
-  if (view === "order" && arg) return <OrderView id={arg} />;
-  // A person's link opens the People tab with their card expanded.
-  if (view === "person" && arg) return <Overview focus={arg} />;
+  // Links to an order or a person open its card on the Group Buys page.
+  if (view === "order" && arg) return <Overview focusOrder={arg} />;
+  if (view === "person" && arg) return <Overview focusPerson={arg} />;
   return <Overview />;
 }
 
@@ -56,94 +56,117 @@ function useGroupWrite() {
   return { busy, run };
 }
 
-// Kept while you move around: the tab, and which people's cards are open.
+// Kept while you move around: the tab, and which orders' and people's cards are open.
 let tab: "orders" | "people" = "orders";
+let openOrders = new Set<string>();
 let openPeople = new Set<string>();
 
-function Overview({ focus }: { focus?: string }) {
+function useToggleSet(initial: () => Set<string>, keep: (s: Set<string>) => void): [Set<string>, (k: string) => void] {
+  const [set, setSet] = useState(initial);
+  const toggle = (k: string) =>
+    setSet((prev) => {
+      const next = new Set(prev);
+      if (next.has(k)) next.delete(k);
+      else next.add(k);
+      keep(next);
+      return next;
+    });
+  return [set, toggle];
+}
+
+function Overview({ focusOrder, focusPerson }: { focusOrder?: string; focusPerson?: string }) {
   const { data } = useWorkbook();
   const orders = useMemo(() => groupOrders(data.groupBuys), [data.groupBuys]);
   const fs = useMemo(() => friends(orders), [orders]);
   const t = totals(orders);
-  const [which, setWhich] = useState(() => (focus ? (tab = "people") : tab));
+  const [which, setWhich] = useState(() => (focusPerson ? (tab = "people") : focusOrder ? (tab = "orders") : tab));
   const pick = (w: typeof tab) => setWhich((tab = w));
-  const [open, setOpen] = useState(() => (focus ? (openPeople = new Set([...openPeople, personKey(focus)])) : openPeople));
-  const toggle = (k: string) =>
-    setOpen((prev) => {
-      const next = new Set(prev);
-      if (next.has(k)) next.delete(k);
-      else next.add(k);
-      return (openPeople = next);
-    });
-  // Opened from a link to one person: bring their card into view.
+  const [openO, toggleO] = useToggleSet(
+    () => (focusOrder ? (openOrders = new Set([...openOrders, focusOrder])) : openOrders),
+    (n) => (openOrders = n),
+  );
+  const [openP, toggleP] = useToggleSet(
+    () => (focusPerson ? (openPeople = new Set([...openPeople, personKey(focusPerson)])) : openPeople),
+    (n) => (openPeople = n),
+  );
+  // Opened from a link to one order or person: bring their card into view.
   useEffect(() => {
-    if (focus) document.getElementById(`gb-p-${personKey(focus)}`)?.scrollIntoView({ block: "start" });
-  }, [focus]);
+    const id = focusOrder ? `gb-o-${focusOrder}` : focusPerson ? `gb-p-${personKey(focusPerson)}` : null;
+    if (id) document.getElementById(id)?.scrollIntoView({ block: "start" });
+  }, [focusOrder, focusPerson]);
 
   return (
     <>
-      <div className="card-head">
-        <h2 className="st-title">Group Buys</h2>
-        <button className="primary small" onClick={() => go("purchase/group")}>+ New Group Buy</button>
+      {/* One row: what you're owed, what's to hand over, Orders / People, and + New. */}
+      <div className="gb-bar">
+        {orders.length > 0 && (
+          <>
+            <span className="gb-stat" title="Owed to you by friends who haven't paid">
+              <b>{money(t.owed)}</b>
+              <i>owed to you</i>
+            </span>
+            <span className="gb-stat" title={`${t.waiting} bottles to hand over${t.waiting ? `, ${t.ready} of them with you now` : ""}`}>
+              <b>{t.waiting} btl</b>
+              <i>to hand over</i>
+            </span>
+            <div className="seg gb-tabs" role="group" aria-label="Show">
+              <button className={which === "orders" ? "on" : ""} onClick={() => pick("orders")}>Orders</button>
+              <button className={which === "people" ? "on" : ""} onClick={() => pick("people")}>People</button>
+            </div>
+          </>
+        )}
+        <button className="primary small gb-new" onClick={() => go("purchase/group")} aria-label="New Group Buy" title="New Group Buy">
+          {orders.length > 0 ? "+ New" : "+ New Group Buy"}
+        </button>
       </div>
       {orders.length === 0 ? (
         <section className="card">
           <p>No Group Buys yet. Use <strong>+ New Group Buy</strong> (or turn on "Group Buy" in Add purchase) to split an order with friends.</p>
         </section>
-      ) : (
-        <>
-          <div className="gb-tiles">
-            <div className="gb-tile">
-              <span className="muted small">Owed to you</span>
-              <b>{money(t.owed)}</b>
-            </div>
-            <div className="gb-tile">
-              <span className="muted small">To hand over</span>
-              <b>{bottles(t.waiting).replace(" bottles", " btl").replace(" bottle", " btl")}</b>
-              {t.waiting > 0 && <span className="muted small">{t.ready} with you now</span>}
-            </div>
-          </div>
-          <div className="seg gb-tabs">
-            <button className={which === "orders" ? "on" : ""} onClick={() => pick("orders")}>Orders</button>
-            <button className={which === "people" ? "on" : ""} onClick={() => pick("people")}>People</button>
-          </div>
-          {which === "orders"
-            ? orders.map((o) => (
-                <a key={o.id} className="card gb-order gb-order-row" href={href(`groupbuys/order/${encodeURIComponent(o.id)}`)}>
-                  <span className="gb-order-text">
-                    <strong>{orderTitle(o)}</strong>
-                    <span className="muted small">{[o.name ? o.merchant : "", fmtShort(o.date), money(o.total)].filter(Boolean).join(" · ")}</span>
+      ) : which === "orders" ? (
+        orders.map((o) => {
+          const isOpen = openO.has(o.id);
+          return (
+            <section key={o.id} id={`gb-o-${o.id}`} className={`card gb-order gb-person-card${isOpen ? " open" : ""}`}>
+              <button type="button" className="gb-person-head gb-order-row" aria-expanded={isOpen} onClick={() => toggleO(o.id)}>
+                <span className="gb-order-text">
+                  <strong>{orderTitle(o)}</strong>
+                  <span className="muted small">{[o.name ? o.merchant : "", fmtShort(o.date), money(o.total)].filter(Boolean).join(" · ")}</span>
+                </span>
+                {o.done ? (
+                  <span className="gb-alldone">✓ All done</span>
+                ) : (
+                  <span className="gb-counts">
+                    <Count label="Arrived" n={o.arrivedLines} of={o.lines.length} />
+                    <Count label="Paid" n={o.paidPeople} of={o.people.length} />
+                    <Count label="Handed" n={o.handedPeople} of={o.people.length} />
                   </span>
-                  {o.done ? (
-                    <span className="gb-alldone">✓ All done</span>
-                  ) : (
-                    <span className="gb-counts">
-                      <Count label="Arrived" n={o.arrivedLines} of={o.lines.length} />
-                      <Count label="Paid" n={o.paidPeople} of={o.people.length} />
-                      <Count label="Handed" n={o.handedPeople} of={o.people.length} />
-                    </span>
-                  )}
-                </a>
-              ))
-            : fs.map((f) => {
-                const k = personKey(f.name);
-                const isOpen = open.has(k);
-                return (
-                  <section key={f.name} id={`gb-p-${k}`} className={`card gb-order gb-person-card${isOpen ? " open" : ""}`}>
-                    <button type="button" className="gb-row gb-person-head" aria-expanded={isOpen} onClick={() => toggle(k)}>
-                      <strong>{f.name}</strong>
-                      <span className="muted small">
-                        {f.owes > 0 || f.waiting > 0
-                          ? [f.owes > 0 ? `owes ${money(f.owes)}` : "", f.waiting > 0 ? `${f.waiting} btl waiting${f.ready ? ` (${f.ready} with you)` : ""}` : ""].filter(Boolean).join(" · ")
-                          : "✓ settled"}
-                        <span className="gb-chev" aria-hidden="true">▾</span>
-                      </span>
-                    </button>
-                    {isOpen && <PersonDetail name={f.name} orders={orders} />}
-                  </section>
-                );
-              })}
-        </>
+                )}
+                <span className="gb-chev" aria-hidden="true">▾</span>
+              </button>
+              {isOpen && <OrderDetail order={o} />}
+            </section>
+          );
+        })
+      ) : (
+        fs.map((f) => {
+          const k = personKey(f.name);
+          const isOpen = openP.has(k);
+          return (
+            <section key={f.name} id={`gb-p-${k}`} className={`card gb-order gb-person-card${isOpen ? " open" : ""}`}>
+              <button type="button" className="gb-row gb-person-head" aria-expanded={isOpen} onClick={() => toggleP(k)}>
+                <strong>{f.name}</strong>
+                <span className="muted small">
+                  {f.owes > 0 || f.waiting > 0
+                    ? [f.owes > 0 ? `owes ${money(f.owes)}` : "", f.waiting > 0 ? `${f.waiting} btl waiting${f.ready ? ` (${f.ready} with you)` : ""}` : ""].filter(Boolean).join(" · ")
+                    : "✓ settled"}
+                  <span className="gb-chev" aria-hidden="true">▾</span>
+                </span>
+              </button>
+              {isOpen && <PersonDetail name={f.name} orders={orders} />}
+            </section>
+          );
+        })
       )}
     </>
   );
@@ -160,27 +183,17 @@ function Count({ label, n, of }: { label: string; n: number; of: number }) {
   );
 }
 
-function OrderView({ id }: { id: string }) {
-  const { data } = useWorkbook();
-  const o = useMemo(() => groupOrders(data.groupBuys).find((x) => x.id === id), [data.groupBuys, id]);
+/** Inside an order's expanded card: name it, mark wines arrived, change the split, and each friend's Paid / Hand over. */
+function OrderDetail({ order: o }: { order: GbOrder }) {
   const [arriving, setArriving] = useState<GbLine | null>(null);
   const [editing, setEditing] = useState<GbLine | null>(null);
   const [renaming, setRenaming] = useState<string | null>(null);
   const { busy, run } = useGroupWrite();
-  if (!o) {
-    return (
-      <section className="card">
-        <p>That Group Buy wasn't found.</p>
-        <a href={href("groupbuys")}>← Group Buys</a>
-      </section>
-    );
-  }
   const unArrive = (l: GbLine) =>
     run({ set: l.rows.map((r) => ({ rowId: r.rowId, cells: { Arrived: "", "Arrived Date": "" } })) }, "Marked as not arrived. Your cellar wasn't changed.");
 
   return (
-    <>
-      <a className="back" href={href("groupbuys")}>← Group Buys</a>
+    <div className="gb-order-body">
       {renaming !== null ? (
         <div className="split-new gb-rename">
           <input value={renaming} autoFocus placeholder="e.g. Burgundy 2021 release" onChange={(e) => setRenaming(e.target.value)} />
@@ -196,52 +209,43 @@ function OrderView({ id }: { id: string }) {
           <button className="link" onClick={() => setRenaming(null)}>Cancel</button>
         </div>
       ) : (
-        <div className="card-head">
-          <h2 className="st-title">{orderTitle(o)}</h2>
+        <div className="gb-row gb-order-tools">
+          <span className="gb-h">Arrived with you</span>
           <button className="link small" onClick={() => setRenaming(o.name)}>✎ {o.name ? "Rename" : "Name it"}</button>
         </div>
       )}
-      <p className="muted small gb-sub">
-        {[o.merchant, fmtDate(o.date), money(o.total)].filter(Boolean).join(" · ")}
-      </p>
-
-      <section className="card">
-        <h3 className="gb-h">Arrived with you</h3>
-        {o.lines.map((l) => (
-          <div key={l.line} className="gb-line">
-            <div className="gb-line-text">
-              <span>{lineName(l)} <span className="muted">· {l.bottles}</span></span>
-              <span className="muted small">
-                {l.rows.filter((r) => r.bottles > 0).map((r) => `${isMe(r.person) ? "Me" : r.person} ${r.bottles}`).join(" · ")}
-                {l.price !== null && ` · ${money(l.price)} each`}
-              </span>
-              <button className="link small gb-edit" disabled={busy} onClick={() => setEditing(l)}>Edit split</button>
-            </div>
-            <button
-              className={`gb-tick${l.arrived ? " on" : ""}`}
-              disabled={busy}
-              aria-pressed={l.arrived}
-              onClick={() => (l.arrived ? void unArrive(l) : l.mine > 0 && l.wineId ? setArriving(l) : void run({ set: l.rows.map((r) => ({ rowId: r.rowId, cells: { Arrived: "Yes", "Arrived Date": today() } })) }, "Marked as arrived."))}
-            >
-              {l.arrived ? "✓ Arrived" : "Arrived?"}
-            </button>
+      {o.lines.map((l) => (
+        <div key={l.line} className="gb-line">
+          <div className="gb-line-text">
+            <span>{lineName(l)} <span className="muted">· {l.bottles}</span></span>
+            <span className="muted small">
+              {l.rows.filter((r) => r.bottles > 0).map((r) => `${isMe(r.person) ? "Me" : r.person} ${r.bottles}`).join(" · ")}
+              {l.price !== null && ` · ${money(l.price)} each`}
+            </span>
+            <button className="link small gb-edit" disabled={busy} onClick={() => setEditing(l)}>Edit split</button>
           </div>
-        ))}
-        <p className="muted small">Ticking “Arrived” on a wine you have a share of also marks your bottles as arrived in your cellar.</p>
-      </section>
-
-      {o.people.map((p) => <PersonShare key={p.name} order={o} person={p} />)}
-
-      <section className="card gb-me">
-        <div className="gb-row">
-          <strong>Me</strong>
-          <span className="muted small">{o.me.bottles ? `${bottles(o.me.bottles)} · ${money(o.me.amount)} · in your cellar` : "no bottles for you"}</span>
+          <button
+            className={`gb-tick${l.arrived ? " on" : ""}`}
+            disabled={busy}
+            aria-pressed={l.arrived}
+            title={l.mine > 0 ? "Also marks your bottles as arrived in your cellar" : undefined}
+            onClick={() => (l.arrived ? void unArrive(l) : l.mine > 0 && l.wineId ? setArriving(l) : void run({ set: l.rows.map((r) => ({ rowId: r.rowId, cells: { Arrived: "Yes", "Arrived Date": today() } })) }, "Marked as arrived."))}
+          >
+            {l.arrived ? "✓ Arrived" : "Arrived?"}
+          </button>
         </div>
-      </section>
+      ))}
+
+      {o.people.map((p) => <PersonShare key={p.name} order={o} person={p} flat />)}
+
+      <div className="gb-row gb-me-row">
+        <strong>Me</strong>
+        <span className="muted small">{o.me.bottles ? `${bottles(o.me.bottles)} · ${money(o.me.amount)} · in your cellar` : "no bottles for you"}</span>
+      </div>
 
       {arriving && <ArriveShare order={o} line={arriving} onClose={() => setArriving(null)} />}
       {editing && <EditSplit order={o} line={editing} onClose={() => setEditing(null)} />}
-    </>
+    </div>
   );
 }
 

@@ -16,9 +16,11 @@ import { sellBottles, undoSale, type SaleDetails } from "../sales";
 import { formatHeld, formatPct, heldYears, lastBoughtYear, newestSales, saleMoney } from "../salesmodel";
 import { isSetUp, placementOf, sourceKey, sourcesOf, spotName } from "../spots";
 import { MoveSheet, NEW_LOOSE, SpotSelect, useResolveSpot } from "./SpotPicker";
+import { lastPurchaseOf, removeBottles, REMOVE_REASONS, undoRemove, type RemoveReason, type RemoveRequest } from "../corrections";
+import type { Purchase } from "../purchasemodel";
 import { spotHref } from "./Storage";
 
-type Dialog = null | "open" | "add" | "arrived" | "sell";
+type Dialog = null | "open" | "add" | "remove" | "arrived" | "sell";
 
 const money = (n: number | null) => formatPrice(n === null ? null : Math.round(n * 100) / 100, config.currency);
 
@@ -51,7 +53,7 @@ function FromSpot({ w, loc, value, onChange }: { w: Wine; loc: Location; value: 
 }
 
 export default function WineDetail({ id }: { id: string }) {
-  const { data, putWine, putOpening, removeOpening, putSale, removeSale } = useWorkbook();
+  const { data, putWine, putOpening, removeOpening, putSale, removeSale, putPurchases } = useWorkbook();
   const toast = useToast();
   const resolveSpot = useResolveSpot();
   const [busy, setBusy] = useState(false);
@@ -104,6 +106,41 @@ export default function WineDetail({ id }: { id: string }) {
       setBusy(false);
     }
   }
+
+  /** Bottles that weren't opened or sold: off the count, into the adjustments log, with Undo. */
+  const remove = async (r: RemoveRequest) => {
+    setBusy(true);
+    try {
+      const res = await removeBottles(itemId, id, r);
+      putWine(res.wine);
+      if (res.purchases) putPurchases(res.purchases);
+      setDialog(null);
+      const what = `Removed ${bottles(r.n)} from ${r.loc}`;
+      toast({
+        text: res.logError
+          ? `${what}, but the change couldn't be recorded: ${describeError(res.logError)}`
+          : `${what}${res.purchaseId ? " and from your purchases" : ""}.`,
+        error: !!res.logError,
+        action: {
+          label: "Undo",
+          run: async () => {
+            try {
+              const u = await undoRemove(itemId, id, r, res);
+              putWine(u.wine);
+              if (u.purchases) putPurchases(u.purchases);
+              toast({ text: "Undone." });
+            } catch (e) {
+              toast({ text: describeError(e), error: true });
+            }
+          },
+        },
+      });
+    } catch (e) {
+      toast({ text: describeError(e), error: true });
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const open = async (l: Location, date: string, occasion: string, spot: string | null) => {
     setBusy(true);
@@ -271,6 +308,7 @@ export default function WineDetail({ id }: { id: string }) {
             🍷 Open a bottle
           </button>
           <button disabled={!hasLocations || busy} onClick={() => setDialog("add")}>+ Add bottles</button>
+          <button disabled={!hasLocations || busy || stocked.length === 0} onClick={() => setDialog("remove")}>− Remove</button>
           <button disabled={!hasLocations || busy || stocked.length === 0} onClick={() => setMoving({})}>⇄ Move</button>
           <button disabled={!hasLocations || busy || stocked.length === 0} onClick={() => setDialog("sell")}>💰 Sell</button>
           {wine.status === "NYA" && (
@@ -409,6 +447,18 @@ export default function WineDetail({ id }: { id: string }) {
               () => adjustBottles(itemId, id, { [l]: -n }, { [l]: { from: spot } }),
             );
           }}
+        />
+      )}
+
+      {dialog === "remove" && (
+        <RemoveDialog
+          wine={wine}
+          stocked={stocked}
+          at={at}
+          busy={busy}
+          lastPurchase={lastPurchaseOf(data.purchases, id)}
+          onClose={() => setDialog(null)}
+          onRemove={(r) => void remove(r)}
         />
       )}
 
@@ -688,6 +738,82 @@ export function formatDay(iso: string | null): string {
   if (!iso) return "No date";
   const d = new Date(`${iso}T00:00:00Z`);
   return d.toLocaleDateString("en-SG", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
+}
+
+/** Take bottles off that weren't opened or sold (added by mistake, broken, given away). */
+function RemoveDialog({
+  wine, stocked, at, busy, lastPurchase, onClose, onRemove,
+}: {
+  wine: Wine;
+  stocked: Location[];
+  at: (l: Location) => number;
+  busy: boolean;
+  lastPurchase: Purchase | null;
+  onClose: () => void;
+  onRemove: (r: RemoveRequest) => void;
+}) {
+  const [from, setFrom] = useState<Location>(stocked[0]);
+  const [spot, setSpot] = useState<string | null>(() => firstSpot(wine, stocked[0]));
+  const [n, setN] = useState(1);
+  const [reason, setReason] = useState<RemoveReason>("mistake");
+  const [note, setNote] = useState("");
+  const [fixPurchase, setFixPurchase] = useState(true);
+  // No more than the chosen box (or the not-placed bottles) holds.
+  const p = placementOf(wine, from);
+  const max = spot === null ? (p.spots.length && p.unplaced > 0 ? p.unplaced : at(from)) : p.spots.find((x) => x.spot === spot)?.n ?? at(from);
+  const count = Math.min(n, Math.max(1, max));
+  const fmtDay = (iso: string) => new Date(`${iso}T00:00:00`).toLocaleDateString("en-SG", { day: "numeric", month: "short", year: "numeric" });
+  return (
+    <Modal title="Remove bottles" onClose={onClose}>
+      <p className="muted small">For bottles that weren't opened or sold. If you drank or sold them, use 🍷 Open or 💰 Sell so they're in your history.</p>
+      {stocked.length > 1 ? (
+        <div className="seg">
+          {stocked.map((l) => (
+            <button
+              key={l}
+              className={l === from ? "on" : ""}
+              onClick={() => {
+                setFrom(l);
+                setSpot(firstSpot(wine, l));
+              }}
+            >
+              {l} ({at(l)})
+            </button>
+          ))}
+        </div>
+      ) : (
+        <p className="muted">From {from} ({bottles(at(from))})</p>
+      )}
+      <FromSpot w={wine} loc={from} value={spot} onChange={setSpot} />
+      <Stepper value={count} min={1} max={Math.max(1, max)} onChange={setN} />
+      <div className="seg rm-reasons" role="radiogroup" aria-label="Why">
+        {REMOVE_REASONS.map((r) => (
+          <button key={r.key} type="button" role="radio" aria-checked={reason === r.key} className={reason === r.key ? "on" : ""} onClick={() => setReason(r.key)}>
+            {r.label}
+          </button>
+        ))}
+      </div>
+      {reason === "mistake" && lastPurchase?.date && (
+        <label className="switch rm-purchase">
+          <input type="checkbox" checked={fixPurchase} onChange={(e) => setFixPurchase(e.target.checked)} /> Also take {count === 1 ? "it" : "them"} off
+          your purchase on {fmtDay(lastPurchase.date)}{lastPurchase.source ? ` (${lastPurchase.source})` : ""}
+        </label>
+      )}
+      <label className="field">
+        <span>Note (optional)</span>
+        <input value={note} placeholder={reason === "gift" ? "Who to" : reason === "broken" ? "What happened" : ""} onChange={(e) => setNote(e.target.value)} />
+      </label>
+      <div className="actions">
+        <button
+          className="primary"
+          disabled={busy}
+          onClick={() => onRemove({ loc: from, n: count, spot, reason, note, purchase: reason === "mistake" && fixPurchase ? lastPurchase : null })}
+        >
+          {busy ? "Saving…" : `Remove ${bottles(count)} from ${from}`}
+        </button>
+      </div>
+    </Modal>
+  );
 }
 
 function AddDialog({ busy, onClose, onSave }: { busy: boolean; onClose: () => void; onSave: (l: Location, n: number, spot: string | null) => void }) {
