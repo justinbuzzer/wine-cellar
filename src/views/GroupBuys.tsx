@@ -206,22 +206,12 @@ function OrderDetail({ order: o }: { order: GbOrder }) {
           </button>
           <button className="link" onClick={() => setRenaming(null)}>Cancel</button>
         </div>
-      ) : (
-        <div className="gb-row gb-order-tools">
-          <span className="gb-h">Arrived with you</span>
-          <button className="link small" onClick={() => setRenaming(o.name)}>✎ {o.name ? "Rename" : "Name it"}</button>
-        </div>
-      )}
+      ) : null}
       {o.lines.map((l) => (
         <div key={l.line} className="gb-line">
-          <div className="gb-line-text">
-            <span>{lineName(l)} <span className="muted">· {l.bottles}</span></span>
-            <span className="muted small">
-              {l.rows.filter((r) => r.bottles > 0).map((r) => `${isMe(r.person) ? "Me" : r.person} ${r.bottles}`).join(" · ")}
-              {l.price !== null && ` · ${money(l.price)} each`}
-            </span>
-            <button className="link small gb-edit" disabled={busy} onClick={() => setEditing(l)}>Edit split</button>
-          </div>
+          {/* Who gets how many is in each friend's row and the Me line, so here just the wine and its total. */}
+          <span className="gb-line-name">{lineName(l)} ×{l.bottles}</span>
+          <span className="gb-line-acts">
           <button
             className={`gb-tick${l.arrived ? " on" : ""}`}
             disabled={busy}
@@ -231,14 +221,20 @@ function OrderDetail({ order: o }: { order: GbOrder }) {
           >
             {l.arrived ? "✓ Arrived" : "Arrived?"}
           </button>
+          <button className="link small gb-edit" disabled={busy} onClick={() => setEditing(l)}>Edit split</button>
+          </span>
         </div>
       ))}
 
-      {o.people.map((p) => <PersonShare key={p.name} order={o} person={p} flat />)}
+      {o.people.map((p) => <PersonShare key={p.name} order={o} person={p} flat hideWines={o.lines.length === 1} />)}
 
       <div className="gb-row gb-me-row">
-        <strong>Me</strong>
-        <span className="muted small">{o.me.bottles ? `${bottles(o.me.bottles)} · ${money(o.me.amount)} · in your cellar` : "no bottles for you"}</span>
+        <span className="muted small">
+          <strong className="gb-me">Me</strong> · {o.me.bottles ? `${o.me.bottles} btl · ${money(o.me.amount)} · in your cellar` : "no bottles for you"}
+        </span>
+        {renaming === null && (
+          <button className="link small gb-rename-link" onClick={() => setRenaming(o.name)}>✎ {o.name ? "Rename" : "Name it"}</button>
+        )}
       </div>
 
       {arriving && <ArriveShare order={o} line={arriving} onClose={() => setArriving(null)} />}
@@ -248,7 +244,9 @@ function OrderDetail({ order: o }: { order: GbOrder }) {
 }
 
 /** One friend's share of an order: what they're getting, what they owe, and the Paid / Handed over ticks. */
-function PersonShare({ order, person: p, showOrder, flat }: { order: GbOrder; person: GbPerson; showOrder?: boolean; flat?: boolean }) {
+function PersonShare({
+  order, person: p, showOrder, flat, hideWines,
+}: { order: GbOrder; person: GbPerson; showOrder?: boolean; flat?: boolean; hideWines?: boolean }) {
   const { busy, run } = useGroupWrite();
   const rows = p.rows.filter((r) => r.bottles > 0);
   const lineOf = (n: number) => order.lines.find((l) => l.line === n);
@@ -275,7 +273,7 @@ function PersonShare({ order, person: p, showOrder, flat }: { order: GbOrder; pe
         </span>
       </div>
       <div className="gb-share-row">
-        <div className="muted small gb-wines">
+        {!hideWines && <div className="muted small gb-wines">
           {rows.map((r) => {
             const l = lineOf(r.line);
             const state = stateOf(r);
@@ -287,7 +285,7 @@ function PersonShare({ order, person: p, showOrder, flat }: { order: GbOrder; pe
               </span>
             );
           })}
-        </div>
+        </div>}
         <span className="gb-share-status">
           {allHanded ? (
             <button className="gb-tick on" disabled={busy} onClick={() => void unHand()} title="Tap to undo">✓ Handed over</button>
