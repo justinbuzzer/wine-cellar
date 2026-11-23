@@ -14,8 +14,6 @@ import { logPurchases, purchaseRow } from "../purchases";
 import { todayIso } from "../notesmodel";
 
 const money = (n: number) => formatPrice(Math.round(n * 100) / 100, config.currency);
-const fmtDate = (iso: string | null) =>
-  iso ? new Date(`${iso}T00:00:00`).toLocaleDateString("en-SG", { day: "numeric", month: "short", year: "numeric" }) : "No date";
 /** "23 Nov" this year, "23 Nov 2025" otherwise. */
 const fmtShort = (iso: string | null) =>
   iso
@@ -267,29 +265,30 @@ function PersonShare({ order, person: p, showOrder, flat }: { order: GbOrder; pe
   const mixed = new Set(rows.map(stateOf)).size > 1;
   return (
     <section className={`gb-person${flat ? " flat" : " card"}`}>
-      <div className="gb-share">
-        <div className="gb-share-main">
-          <strong>{showOrder ? <a href={href(`groupbuys/order/${encodeURIComponent(order.id)}`)}>{orderTitle(order)} · {fmtDate(order.date)}</a> : <a href={href(`groupbuys/person/${encodeURIComponent(p.name)}`)}>{p.name}</a>}</strong>
-          <div className="muted small gb-wines">
-            {rows.map((r) => {
-              const l = lineOf(r.line);
-              const state = stateOf(r);
-              return (
-                <span key={r.rowId}>
-                  {l ? lineName(l) : r.name} ×{r.bottles}
-                  {/* Each wine's state only when they differ (the right side already says it otherwise). */}
-                  {mixed && <em> ({state})</em>}
-                </span>
-              );
-            })}
-          </div>
-        </div>
-        {/* On the right, under the total: Paid, then Hand over (or what's still to arrive). */}
-        <div className="gb-share-side">
-          <span className="muted small">{bottles(p.bottles)} · {money(p.amount)}{p.unpriced ? " + unpriced" : ""}</span>
+      <div className="gb-share-row">
+        <strong className="gb-share-title">{showOrder ? <a href={href(`groupbuys/order/${encodeURIComponent(order.id)}`)}>{orderTitle(order)} · {fmtShort(order.date)}</a> : <a href={href(`groupbuys/person/${encodeURIComponent(p.name)}`)}>{p.name}</a>}</strong>
+        <span className="gb-share-top">
+          <span className="muted small">{p.bottles} btl · {money(p.amount)}{p.unpriced ? " + unpriced" : ""}</span>
           <button className={`gb-tick${p.paid ? " on" : ""}`} disabled={busy} aria-pressed={p.paid} onClick={() => void setPaid(!p.paid)}>
             {p.paid ? "✓ Paid" : "Paid?"}
           </button>
+        </span>
+      </div>
+      <div className="gb-share-row">
+        <div className="muted small gb-wines">
+          {rows.map((r) => {
+            const l = lineOf(r.line);
+            const state = stateOf(r);
+            return (
+              <span key={r.rowId}>
+                {l ? lineName(l) : r.name} ×{r.bottles}
+                {/* Each wine's state only when they differ (the right side already says it otherwise). */}
+                {mixed && <em> ({state})</em>}
+              </span>
+            );
+          })}
+        </div>
+        <span className="gb-share-status">
           {allHanded ? (
             <button className="gb-tick on" disabled={busy} onClick={() => void unHand()} title="Tap to undo">✓ Handed over</button>
           ) : p.ready > 0 ? (
@@ -297,7 +296,7 @@ function PersonShare({ order, person: p, showOrder, flat }: { order: GbOrder; pe
           ) : (
             <span className="muted small">{p.handed ? `${p.handed} handed · ` : ""}{p.coming} not arrived yet</span>
           )}
-        </div>
+        </span>
       </div>
     </section>
   );
