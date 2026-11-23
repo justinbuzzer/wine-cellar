@@ -1,10 +1,10 @@
-import { useEffect, useState } from "react";
-
-// Light/dark theme. Until you tap the toggle the app follows your device's setting;
-// after that your choice is remembered on this device. The same key is read by the
-// small script in index.html so the right theme is applied before the first paint.
+// Light/dark theme, chosen in Settings → Display. "Automatic" follows your
+// device's setting (and changes with it, e.g. dark mode at night); Light or Dark
+// is remembered on this device. The same key is read by the small script in
+// index.html so the right theme is applied before the first paint.
 
 export type Theme = "light" | "dark";
+export type ThemeChoice = "auto" | Theme;
 const KEY = "wine-cellar.theme";
 const media = window.matchMedia("(prefers-color-scheme: dark)");
 
@@ -19,36 +19,26 @@ function stored(): Theme | null {
 
 const deviceTheme = (): Theme => (media.matches ? "dark" : "light");
 
-function apply(t: Theme) {
-  document.documentElement.setAttribute("data-theme", t);
+function applyTheme() {
+  document.documentElement.setAttribute("data-theme", stored() ?? deviceTheme());
 }
 
-export function useTheme(): [Theme, () => void] {
-  const [theme, setTheme] = useState<Theme>(() => stored() ?? deviceTheme());
-
-  useEffect(() => {
-    apply(theme);
-  }, [theme]);
-
-  // While you haven't chosen, keep following the device (e.g. automatic dark mode at night).
-  useEffect(() => {
-    const onChange = () => {
-      if (!stored()) setTheme(deviceTheme());
-    };
-    media.addEventListener("change", onChange);
-    return () => media.removeEventListener("change", onChange);
-  }, []);
-
-  const toggle = () =>
-    setTheme((t) => {
-      const next: Theme = t === "dark" ? "light" : "dark";
-      try {
-        localStorage.setItem(KEY, next);
-      } catch {
-        /* still switches for this visit */
-      }
-      return next;
-    });
-
-  return [theme, toggle];
+export function themeChoice(): ThemeChoice {
+  return stored() ?? "auto";
 }
+
+export function setThemeChoice(c: ThemeChoice) {
+  try {
+    if (c === "auto") localStorage.removeItem(KEY);
+    else localStorage.setItem(KEY, c);
+  } catch {
+    /* still switches for this visit */
+  }
+  if (c === "auto") applyTheme();
+  else document.documentElement.setAttribute("data-theme", c);
+}
+
+// On Automatic, keep following the device while the app is open.
+media.addEventListener("change", () => {
+  if (!stored()) applyTheme();
+});

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { config } from "../config";
 import { formatPrice, shortName, type Cell } from "../data";
 import { changeGroupBuy, today } from "../groupbuys";
@@ -30,7 +30,8 @@ const lineName = (l: Pick<GbLine, "producer" | "name" | "vintage">) =>
 
 export default function GroupBuys({ view, arg }: { view?: string; arg?: string }) {
   if (view === "order" && arg) return <OrderView id={arg} />;
-  if (view === "person" && arg) return <PersonView name={arg} />;
+  // A person's link opens the People tab with their card expanded.
+  if (view === "person" && arg) return <Overview focus={arg} />;
   return <Overview />;
 }
 
@@ -55,16 +56,29 @@ function useGroupWrite() {
   return { busy, run };
 }
 
-// Kept while you move around.
+// Kept while you move around: the tab, and which people's cards are open.
 let tab: "orders" | "people" = "orders";
+let openPeople = new Set<string>();
 
-function Overview() {
+function Overview({ focus }: { focus?: string }) {
   const { data } = useWorkbook();
   const orders = useMemo(() => groupOrders(data.groupBuys), [data.groupBuys]);
   const fs = useMemo(() => friends(orders), [orders]);
   const t = totals(orders);
-  const [which, setWhich] = useState(tab);
+  const [which, setWhich] = useState(() => (focus ? (tab = "people") : tab));
   const pick = (w: typeof tab) => setWhich((tab = w));
+  const [open, setOpen] = useState(() => (focus ? (openPeople = new Set([...openPeople, personKey(focus)])) : openPeople));
+  const toggle = (k: string) =>
+    setOpen((prev) => {
+      const next = new Set(prev);
+      if (next.has(k)) next.delete(k);
+      else next.add(k);
+      return (openPeople = next);
+    });
+  // Opened from a link to one person: bring their card into view.
+  useEffect(() => {
+    if (focus) document.getElementById(`gb-p-${personKey(focus)}`)?.scrollIntoView({ block: "start" });
+  }, [focus]);
 
   return (
     <>
@@ -111,18 +125,24 @@ function Overview() {
                   )}
                 </a>
               ))
-            : fs.map((f) => (
-                <a key={f.name} className="card gb-order" href={href(`groupbuys/person/${encodeURIComponent(f.name)}`)}>
-                  <div className="gb-row">
-                    <strong>{f.name}</strong>
-                    <span className="muted small">
-                      {f.owes > 0 || f.waiting > 0
-                        ? [f.owes > 0 ? `owes ${money(f.owes)}` : "", f.waiting > 0 ? `${f.waiting} btl waiting${f.ready ? ` (${f.ready} with you)` : ""}` : ""].filter(Boolean).join(" · ")
-                        : "✓ settled"}
-                    </span>
-                  </div>
-                </a>
-              ))}
+            : fs.map((f) => {
+                const k = personKey(f.name);
+                const isOpen = open.has(k);
+                return (
+                  <section key={f.name} id={`gb-p-${k}`} className={`card gb-order gb-person-card${isOpen ? " open" : ""}`}>
+                    <button type="button" className="gb-row gb-person-head" aria-expanded={isOpen} onClick={() => toggle(k)}>
+                      <strong>{f.name}</strong>
+                      <span className="muted small">
+                        {f.owes > 0 || f.waiting > 0
+                          ? [f.owes > 0 ? `owes ${money(f.owes)}` : "", f.waiting > 0 ? `${f.waiting} btl waiting${f.ready ? ` (${f.ready} with you)` : ""}` : ""].filter(Boolean).join(" · ")
+                          : "✓ settled"}
+                        <span className="gb-chev" aria-hidden="true">▾</span>
+                      </span>
+                    </button>
+                    {isOpen && <PersonDetail name={f.name} orders={orders} />}
+                  </section>
+                );
+              })}
         </>
       )}
     </>
@@ -226,7 +246,7 @@ function OrderView({ id }: { id: string }) {
 }
 
 /** One friend's share of an order: what they're getting, what they owe, and the Paid / Handed over ticks. */
-function PersonShare({ order, person: p, showOrder }: { order: GbOrder; person: GbPerson; showOrder?: boolean }) {
+function PersonShare({ order, person: p, showOrder, flat }: { order: GbOrder; person: GbPerson; showOrder?: boolean; flat?: boolean }) {
   const { busy, run } = useGroupWrite();
   const rows = p.rows.filter((r) => r.bottles > 0);
   const lineOf = (n: number) => order.lines.find((l) => l.line === n);
@@ -240,7 +260,7 @@ function PersonShare({ order, person: p, showOrder }: { order: GbOrder; person: 
   const unHand = () => run({ set: p.rows.filter((r) => r.handed).map((r) => ({ rowId: r.rowId, cells: { Handed: "", "Handed Date": "" } })) });
   const allHanded = p.handed === p.bottles;
   return (
-    <section className="card gb-person">
+    <section className={`gb-person${flat ? " flat" : " card"}`}>
       <div className="gb-row">
         <strong>{showOrder ? <a href={href(`groupbuys/order/${encodeURIComponent(order.id)}`)}>{orderTitle(order)} · {fmtDate(order.date)}</a> : <a href={href(`groupbuys/person/${encodeURIComponent(p.name)}`)}>{p.name}</a>}</strong>
         <span className="muted small">{bottles(p.bottles)} · {money(p.amount)}{p.unpriced ? " + unpriced" : ""}</span>
@@ -272,34 +292,27 @@ function PersonShare({ order, person: p, showOrder }: { order: GbOrder; person: 
   );
 }
 
-function PersonView({ name }: { name: string }) {
-  const { data } = useWorkbook();
-  const orders = useMemo(() => groupOrders(data.groupBuys), [data.groupBuys]);
+/** Inside a person's expanded card: their open orders (with Paid / Hand over), then settled ones. */
+function PersonDetail({ name, orders }: { name: string; orders: GbOrder[] }) {
   const mine = orders.map((o) => ({ o, p: o.people.find((x) => personKey(x.name) === personKey(name)) })).filter((x): x is { o: GbOrder; p: GbPerson } => !!x.p);
   const open = mine.filter((x) => !x.p.paid || x.p.handed < x.p.bottles);
   const done = mine.filter((x) => x.p.paid && x.p.handed === x.p.bottles);
-  const f = friends(orders).find((x) => personKey(x.name) === personKey(name));
   return (
-    <>
-      <a className="back" href={href("groupbuys")}>← Group Buys</a>
-      <div className="card-head">
-        <h2 className="st-title">{f?.name ?? name}</h2>
-        <span className="muted small">{f && (f.owes > 0 || f.waiting > 0) ? [f.owes > 0 ? `owes ${money(f.owes)}` : "", f.waiting ? `${f.waiting} btl waiting` : ""].filter(Boolean).join(" · ") : "✓ settled"}</span>
-      </div>
-      {open.length === 0 && <p className="muted">Nothing outstanding.</p>}
-      {open.map(({ o, p }) => <PersonShare key={o.id} order={o} person={p} showOrder />)}
+    <div className="gb-person-body">
+      {open.length === 0 && <p className="muted small gb-nothing">Nothing outstanding.</p>}
+      {open.map(({ o, p }) => <PersonShare key={o.id} order={o} person={p} showOrder flat />)}
       {done.length > 0 && (
-        <details className="card">
-          <summary>Settled ({done.length})</summary>
+        <div className="gb-settled">
+          <span className="muted small">Settled</span>
           {done.map(({ o, p }) => (
             <div key={o.id} className="gb-row gb-done">
-              <a href={href(`groupbuys/order/${encodeURIComponent(o.id)}`)}>{orderTitle(o)} · {fmtDate(o.date)}</a>
+              <a href={href(`groupbuys/order/${encodeURIComponent(o.id)}`)}>{orderTitle(o)} · {fmtShort(o.date)}</a>
               <span className="muted small">{bottles(p.bottles)} · {money(p.amount)}</span>
             </div>
           ))}
-        </details>
+        </div>
       )}
-    </>
+    </div>
   );
 }
 

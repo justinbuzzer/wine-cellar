@@ -75,12 +75,6 @@ a { color: var(--accent); }
 .brand-logo .b-top { font-family: Jost, system-ui, sans-serif; font-weight: 400; fill: var(--b-ink); }
 .brand-logo .b-bottom { font-family: "Playfair Display", Georgia, serif; font-style: italic; font-weight: 500; fill: var(--b-gold); }
 .topbar-right { display: flex; align-items: center; gap: 10px; }
-.theme-toggle {
-  display: inline-flex; align-items: center; justify-content: center; flex: none;
-  width: 38px; height: 38px; padding: 0; border-radius: 50%;
-  background: transparent; color: var(--accent); border: 1px solid var(--border);
-}
-.theme-toggle:hover { border-color: var(--gold); }
 .who { display: flex; align-items: center; gap: 12px; font-size: 0.9rem; }
 
 .card {
@@ -624,6 +618,16 @@ button.compare-btn { letter-spacing: 0; padding: 0 12px; font-size: 0.88rem; fle
 .gb-person .gb-wines em { font-style: normal; opacity: 0.8; }
 .gb-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .gb-done { padding: 6px 0; border-top: 1px solid var(--border); }
+/* People tab: tap a person to open their card in place (orders, Paid, Hand over). */
+button.gb-person-head, button.gb-person-head:hover:not(:disabled) {
+  width: 100%; padding: 0; border: none; border-radius: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer;
+}
+.gb-chev { display: inline-block; margin-left: 6px; transition: transform 0.15s; }
+.gb-person-card.open .gb-chev { transform: rotate(180deg); }
+.gb-person.flat { margin-top: 0.6rem; padding-top: 0.6rem; border-top: 1px solid var(--border); }
+.gb-settled { margin-top: 0.6rem; padding-top: 0.5rem; border-top: 1px solid var(--border); }
+.gb-settled .gb-done:first-of-type { border-top: none; }
+.gb-nothing { margin: 0.5rem 0 0; }
 
 .gb-sub { margin: -6px 0 10px; }
 .gb-rename { margin-bottom: 6px; }
@@ -1042,6 +1046,11 @@ button.col-tip { cursor: pointer; }
   .topbar .tabs.dock { flex: 0 1 auto; }
   .topbar .tabs.dock a { flex: 0 0 auto; }
 }
+/* Settings is the last tab: just its gear on wider screens (named on phones, like the others). */
+@media (min-width: 721px) {
+  .tabs.dock a.dock-settings span { display: none; }
+}
+.set-theme { margin-bottom: 0.4rem; }
 /* Phones: the tab dock floats at the bottom. Kept last so it wins over the bottom bars' own rules. */
 @media (max-width: 720px) {
   :root { --dock-space: calc(80px + env(safe-area-inset-bottom)); }
@@ -1050,7 +1059,8 @@ button.col-tip { cursor: pointer; }
     max-width: 520px; margin: 0 auto;
     box-shadow: inset 0 0 0 1px var(--border), 0 6px 20px rgba(0, 0, 0, 0.14);
   }
-  .tabs.dock a { flex-direction: column; gap: 1px; padding: 6px 1px 5px; font-size: 0.68rem; font-weight: 600; }
+  /* Six tabs: each as wide as its name needs, so "Group Buys" isn't cut short. */
+  .tabs.dock a { flex: 1 1 auto; flex-direction: column; gap: 1px; padding: 6px 1px 5px; font-size: 0.68rem; font-weight: 600; }
   .tabs.dock a span { max-width: 100%; white-space: nowrap; }
   /* Keep everything that sits at the bottom clear of the dock. */
   .app { padding-bottom: calc(var(--dock-space) + 24px); }
@@ -1092,3 +1102,19 @@ button.col-tip { cursor: pointer; }
   /* A sale list is short: no new page for each type. */
   .sl-sheet .wl-section { break-before: auto !important; margin-top: 12pt; }
 }
+
+/* Wine list in full screen: only the list (tap a wine for its details), with a barely-there way out. */
+body.reading { --dock-space: 0px; }
+body.reading .topbar, body.reading .tabs.dock, body.reading .foot, body.reading .banner, body.reading .notice,
+body.reading .sync-note, body.reading .to-top, body.reading .list-modes, body.reading .wl-controls, body.reading .wl-jump {
+  display: none !important;
+}
+body.reading .app { padding-top: calc(12px + env(safe-area-inset-top)); padding-bottom: calc(24px + env(safe-area-inset-bottom)); }
+body.reading .winelist { border-color: transparent; }
+.wl-full-btn { display: inline-flex; align-items: center; gap: 6px; }
+.reading-exit {
+  position: fixed; z-index: 45; top: calc(6px + env(safe-area-inset-top)); right: calc(6px + env(safe-area-inset-right));
+  width: 32px; height: 32px; padding: 0; display: flex; align-items: center; justify-content: center;
+  border: none; border-radius: 50%; background: transparent; color: var(--muted); opacity: 0.3;
+}
+.reading-exit:hover, .reading-exit:focus-visible { opacity: 0.9; background: var(--chip); }

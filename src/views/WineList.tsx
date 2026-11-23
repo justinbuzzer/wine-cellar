@@ -33,6 +33,8 @@ export default function WineList() {
   const update = (p: Partial<Settings>) => setS((prev) => ({ ...prev, ...p }));
   const [open, setOpen] = useState<Wine | null>(null);
   const close = useCallback(() => setOpen(null), []);
+  const [full, setFull] = useState(false);
+  useFullScreen(full, () => setFull(false), !!open);
 
   useEffect(() => {
     try {
@@ -85,6 +87,12 @@ export default function WineList() {
           <span className="muted">
             {entries.length} wines · {bottleTotal} bottles
           </span>
+          <button className="small wl-full-btn" onClick={() => setFull(true)}>
+            <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" />
+            </svg>
+            Full screen
+          </button>
           <button className="primary small" onClick={() => window.print()}>Print / Save as PDF</button>
         </div>
       </section>
@@ -152,7 +160,49 @@ export default function WineList() {
         ))}
       </article>
 
+      {full && (
+        <button type="button" className="reading-exit" onClick={() => setFull(false)} aria-label="Exit full screen" title="Exit full screen">
+          <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5" />
+          </svg>
+        </button>
+      )}
       {open && <WineSheet wine={open} onClose={close} />}
     </>
   );
+}
+
+/**
+ * Full screen reading: hides the app's header, tab dock, list controls and
+ * footer (body.reading in styles.css), and asks the browser for real full
+ * screen where it allows it (computers, Android; not iPhone, where the
+ * installed app already has no browser bars). Escape, the browser's own way
+ * out of full screen, or leaving the page all end it.
+ */
+function useFullScreen(on: boolean, exit: () => void, sheetOpen: boolean) {
+  useEffect(() => {
+    if (!on) return;
+    document.body.classList.add("reading");
+    const el = document.documentElement;
+    if (el.requestFullscreen && !document.fullscreenElement) el.requestFullscreen().catch(() => {});
+    window.scrollTo({ top: 0 });
+    const onChange = () => {
+      if (!document.fullscreenElement) exit();
+    };
+    document.addEventListener("fullscreenchange", onChange);
+    return () => {
+      document.body.classList.remove("reading");
+      document.removeEventListener("fullscreenchange", onChange);
+      if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [on]);
+
+  // Escape leaves full screen (when a wine's details aren't open: Escape closes those first).
+  useEffect(() => {
+    if (!on || sheetOpen) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && exit();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [on, sheetOpen, exit]);
 }

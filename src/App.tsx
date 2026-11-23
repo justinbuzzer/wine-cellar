@@ -4,7 +4,7 @@ import { isAllowed, signIn, signOut } from "./auth";
 import { config } from "./config";
 import { href, useRoute } from "./router";
 import { useWorkbook, WorkbookGate } from "./store";
-import { BackToTop, InstallButton, ThemeToggle, ToastProvider } from "./ui";
+import { BackToTop, InstallButton, ToastProvider } from "./ui";
 import Cellar from "./views/Cellar";
 import Diagnostics from "./views/Diagnostics";
 import WineDetail from "./views/WineDetail";
@@ -69,6 +69,7 @@ const TABS = [
   { path: "overview", label: "Overview" },
   { path: "list", label: "Wine list" },
   { path: "groupbuys", label: "Group Buys" },
+  { path: "settings", label: "Settings" },
 ];
 
 /** Simple line icons for the tab dock (drawn here so they look the same on every phone). */
@@ -100,6 +101,12 @@ function TabIcon({ path }: { path: string }) {
           <circle cx="5" cy="6.5" r=".9" />
           <circle cx="5" cy="12" r=".9" />
           <circle cx="5" cy="17.5" r=".9" />
+        </g>
+      )}
+      {path === "settings" && (
+        <g {...p}>
+          <circle cx="12" cy="12" r="3" />
+          <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5v.2a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" />
         </g>
       )}
       {path === "groupbuys" && (
@@ -143,7 +150,9 @@ function Shell({ account, tabs, children }: { account?: AccountInfo; tabs?: bool
               <a
                 key={t.path}
                 href={href(t.path)}
-                className={section === t.path ? "on" : ""}
+                className={`${section === t.path ? "on" : ""}${t.path === "settings" ? " dock-settings" : ""}`}
+                title={t.label}
+                aria-label={t.label}
                 onClick={(e) => {
                   // Tapping the tab you're already on goes back to the top.
                   if (page === t.path) {
@@ -159,7 +168,6 @@ function Shell({ account, tabs, children }: { account?: AccountInfo; tabs?: bool
           </nav>
         )}
         <div className="topbar-right">
-          <ThemeToggle />
           {account && (
             <div className="who">
               <span>{account.name}</span>
@@ -172,7 +180,7 @@ function Shell({ account, tabs, children }: { account?: AccountInfo; tabs?: bool
       {tabs && isListPage && <BackToTop />}
       {account && (
         <footer className="foot">
-          <a href={href("settings")}>Settings</a> <a href={href("diagnostics")}>Diagnostics</a> <InstallButton />
+          <a href={href("diagnostics")}>Diagnostics</a> <InstallButton />
         </footer>
       )}
     </div>

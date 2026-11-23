@@ -8,6 +8,7 @@ import {
 import { describeError, useWorkbook } from "../store";
 import { useToast } from "../ui";
 import { getTextSize, setTextSize, TEXT_SIZES, type TextSizeKey } from "../textsize";
+import { setThemeChoice, themeChoice, type ThemeChoice } from "../theme";
 
 export default function Settings() {
   const { data, putLayout } = useWorkbook();
@@ -36,10 +37,10 @@ export default function Settings() {
   const cols = columnLetters(f.kcCols);
   return (
     <>
-      <a className="back" href={href("cellar")}>← Cellar</a>
       <h2 className="st-title">Settings</h2>
 
       <h3 className="set-group">Display</h3>
+      <ThemeCard />
       <TextSizeCard />
 
       <h3 className="set-group">Storage layout</h3>
@@ -125,6 +126,40 @@ export default function Settings() {
         </div>
       )}
     </>
+  );
+}
+
+const THEMES: { key: ThemeChoice; label: string }[] = [
+  { key: "auto", label: "Automatic" },
+  { key: "light", label: "Light" },
+  { key: "dark", label: "Dark" },
+];
+
+/** Light or dark for this device (Automatic follows the device): applies straight away. */
+function ThemeCard() {
+  const [choice, setChoice] = useState<ThemeChoice>(themeChoice());
+  return (
+    <section className="card">
+      <h2>Theme</h2>
+      <div className="seg set-theme" role="radiogroup" aria-label="Theme">
+        {THEMES.map((t) => (
+          <button
+            key={t.key}
+            type="button"
+            role="radio"
+            aria-checked={choice === t.key}
+            className={choice === t.key ? "on" : ""}
+            onClick={() => {
+              setThemeChoice(t.key);
+              setChoice(t.key);
+            }}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+      <p className="muted small set-note">Automatic follows your phone or computer, so it turns dark when they do. Just for this device.</p>
+    </section>
   );
 }
 
