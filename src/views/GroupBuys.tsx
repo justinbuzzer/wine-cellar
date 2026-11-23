@@ -10,6 +10,8 @@ import { placementOf } from "../spots";
 import { describeError, useWorkbook } from "../store";
 import { bottles, Modal, useToast } from "../ui";
 import { NEW_LOOSE, SpotSelect, useResolveSpot } from "./SpotPicker";
+import { logPurchases, purchaseRow } from "../purchases";
+import { todayIso } from "../notesmodel";
 
 const money = (n: number) => formatPrice(Math.round(n * 100) / 100, config.currency);
 const fmtDate = (iso: string | null) =>
@@ -336,7 +338,8 @@ function ArriveShare({ order, line, onClose }: { order: GbOrder; line: GbLine; o
 
 /** Change who takes how many of one wine. Your own share changes your cellar too. */
 function EditSplit({ order, line, onClose }: { order: GbOrder; line: GbLine; onClose: () => void }) {
-  const { data, putWine } = useWorkbook();
+  const { data, putWine, putPurchases } = useWorkbook();
+  const toast = useToast();
   const { busy, run } = useGroupWrite();
   const start = useMemo(() => {
     const m: Record<string, number> = { [ME]: 0 };
@@ -355,18 +358,27 @@ function EditSplit({ order, line, onClose }: { order: GbOrder; line: GbLine; onC
     const delta = (split[ME] ?? 0) - (start[ME] ?? 0);
     try {
       let wineId = line.wineId;
+      let bought: Record<string, Cell> | null = null;
       // Your share changed: the cellar follows.
       if (delta !== 0) {
+        let changed = null;
         if (wineId) {
-          putWine(await adjustBottles(data.file.id, wineId, { [to]: delta }));
+          changed = await adjustBottles(data.file.id, wineId, { [to]: delta });
+          putWine(changed);
         } else if (delta > 0) {
-          const w = await addWine(
+          changed = await addWine(
             data.file.id,
             { Producer: line.producer ?? "", Name: line.name ?? "", Vintage: line.vintage ?? "", Price: line.price ?? "", Source: order.merchant, Status: line.arrived ? "" : "NYA" },
             { kc: to === "K Cellars" ? delta : 0, home: to === "Home" ? delta : 0 },
           );
-          putWine(w);
-          wineId = w.wineId;
+          putWine(changed);
+          wineId = changed.wineId;
+        }
+        // Your purchase grew or shrank: dated with the order, so its month stays right.
+        if (changed) {
+          bought = purchaseRow(changed, {
+            date: order.date ?? todayIso(), bottles: delta, price: line.price, source: order.merchant, to, groupBuy: order.name || order.id,
+          });
         }
       }
       const set: { rowId: string; cells: Record<string, Cell> }[] = [];
@@ -409,6 +421,13 @@ function EditSplit({ order, line, onClose }: { order: GbOrder; line: GbLine; onC
       }
       const ok = await run({ set, add, remove }, "Split updated.");
       if (ok) onClose();
+      if (bought) {
+        try {
+          putPurchases(await logPurchases(data.file.id, [bought]));
+        } catch (e) {
+          toast({ text: `Split updated, but the purchase log couldn't be: ${describeError(e)}`, error: true });
+        }
+      }
     } catch (e) {
       setError(describeError(e));
     }

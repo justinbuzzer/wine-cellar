@@ -12,6 +12,9 @@ export interface Bar {
   sub?: string;
 }
 
+/** A month's column, with money for it (what the bottles cost, or brought in). */
+export type MonthBar = Bar & { money: number };
+
 export interface CellarStats {
   wines: number;
   bottles: number;
@@ -98,8 +101,8 @@ export interface DrinkingStats {
   thisYear: number;
   thisYearValue: number;
   lastYear: number;
-  /** Bottles per month for the last 12 months, oldest first. */
-  months: Bar[];
+  /** Bottles per month for the last 12 months, oldest first (money = worth at purchase price). */
+  months: MonthBar[];
   /** Most-opened wines this year. */
   favourites: { wineId: string | null; label: string; count: number }[];
 }
@@ -111,13 +114,14 @@ export function drinkingStats(history: Opening[], today: string): DrinkingStats 
   const dated = history.filter((o) => o.date);
   const thisYear = dated.filter((o) => o.date!.startsWith(year));
 
-  const months: Bar[] = [];
+  const months: MonthBar[] = [];
   let y = Number(year);
   let m = Number(today.slice(5, 7));
   for (let i = 0; i < 12; i++) {
     const key = `${y}-${String(m).padStart(2, "0")}`;
     const label = new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString("en-SG", { month: "short", timeZone: "UTC" });
-    months.unshift({ key, label, value: dated.filter((o) => o.date!.startsWith(key)).length });
+    const inMonth = dated.filter((o) => o.date!.startsWith(key));
+    months.unshift({ key, label, value: inMonth.length, money: Math.round(inMonth.reduce((s, o) => s + (o.price ?? 0), 0)) });
     m -= 1;
     if (m === 0) {
       m = 12;

@@ -7,6 +7,8 @@ import { describeError, useWorkbook } from "../store";
 import { bottles, useToast } from "../ui";
 import { SpotSelect, useResolveSpot } from "./SpotPicker";
 import { locationLine } from "./Cellar";
+import { logPurchases, purchaseRow } from "../purchases";
+import { todayIso } from "../notesmodel";
 
 interface FormState {
   producer: string;
@@ -94,8 +96,22 @@ function validate(f: FormState, adding: boolean): string[] {
   return errs;
 }
 
+/**
+ * Purchases log rows for bottles added here, dated today. Only when they were
+ * bought this year (an older Year purchased means bottles you're catching up on,
+ * whose month isn't known).
+ */
+function boughtRows(f: FormState, w: Wine, kc: number, home: number) {
+  const y = f.yearPurchased.trim();
+  if (y && y !== todayIso().slice(0, 4)) return [];
+  const price = f.price.trim() ? Number(f.price) : w.price;
+  return ([["K Cellars", kc], ["Home", home]] as const)
+    .filter(([, n]) => n > 0)
+    .map(([to, n]) => purchaseRow(w, { date: todayIso(), bottles: n, price, source: f.source || w.source, to }));
+}
+
 export default function WineForm({ id }: { id?: string }) {
-  const { data, putWine } = useWorkbook();
+  const { data, putWine, putPurchases } = useWorkbook();
   const toast = useToast();
   const original = id ? data.wines.find((w) => w.wineId === id) : undefined;
   const adding = !id;
@@ -142,10 +158,21 @@ export default function WineForm({ id }: { id?: string }) {
       putWine(updated);
       toast({ text: `Added ${bottles(kc + home)} to ${w.wineId}.` });
       go(`wine/${w.wineId}`);
+      void logBought(boughtRows(f, updated, kc, home));
     } catch (e) {
       toast({ text: describeError(e), error: true });
     } finally {
       setBusy(false);
+    }
+  }
+
+  /** The bottles are in; a log that fails is reported but doesn't undo them. */
+  async function logBought(rows: Record<string, Cell>[]) {
+    if (!rows.length) return;
+    try {
+      putPurchases(await logPurchases(data.file.id, rows));
+    } catch (e) {
+      toast({ text: `Bottles added, but they couldn't be added to the purchase log: ${describeError(e)}`, error: true });
     }
   }
 
@@ -184,6 +211,8 @@ export default function WineForm({ id }: { id?: string }) {
       putWine(w);
       toast({ text: adding ? `Added ${w.name} (${w.wineId}).` : "Saved." });
       go(`wine/${w.wineId}`);
+      // In the background: the wine page opens straight away.
+      if (adding) void logBought(boughtRows(f, w, Number(f.kc), Number(f.home)));
     } catch (e) {
       toast({ text: describeError(e), error: true });
     } finally {

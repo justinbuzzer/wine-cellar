@@ -16,8 +16,14 @@ import { TYPE_ORDER, typeLabel } from "../winelist";
 import { showInCellar } from "./Cellar";
 import { Columns } from "../charts";
 import { formatPct, salesByMonth, salesTotals } from "../salesmodel";
+import { monthName, purchasesByMonth, purchaseTotals } from "../purchasemodel";
+import type { MonthBar } from "../overview";
 
 const money = (n: number) => formatPrice(n, config.currency);
+const plural = (n: number, one: string, many = `${one}s`) => `${n.toLocaleString()} ${n === 1 ? one : many}`;
+/** The bubble for a tapped month: "Oct 2026 · 3 bottles · S$420". */
+const monthDetail = (verb: string) => (b: MonthBar | { key: string; value: number; money?: number }) =>
+  `${monthName(b.key)} · ${b.value ? `${plural(b.value, "bottle")} ${verb}${b.money ? ` · ${money(Math.round(b.money))}` : ""}` : `nothing ${verb}`}`;
 
 /** Link to the Producers page with how many producers have a logo so far. */
 function LogoProgress() {
@@ -131,7 +137,7 @@ export default function Overview() {
               </p>
             ) : (
               <>
-                <Columns bars={d.months} compact onPick={(b) => go(`history/${b.key}`)} />
+                <Columns bars={d.months} compact detail={(b) => monthDetail("opened")(b as MonthBar)} onOpen={(b) => go(`history/${b.key}`)} />
                 <p className="muted small">
                   {d.thisYear} bottle{d.thisYear === 1 ? "" : "s"} in {year}
                   {d.thisYearValue > 0 && <>, worth {money(d.thisYearValue)} at purchase price</>}.
@@ -139,6 +145,7 @@ export default function Overview() {
               </>
             )}
           </section>
+          <PurchasedCard today={today} />
           <SalesCard today={today} />
         </div>
 
@@ -247,6 +254,33 @@ function Scores({ bars, onPick }: { bars: Bar[]; onPick: (b: Bar) => void }) {
   );
 }
 
+/** Bottles bought this year (your own, from the Purchases log) and what they cost. */
+function PurchasedCard({ today }: { today: string }) {
+  const { data } = useWorkbook();
+  const year = today.slice(0, 4);
+  const months = useMemo(() => purchasesByMonth(data.purchases, today), [data.purchases, today]);
+  const t = useMemo(() => purchaseTotals(data.purchases.filter((p) => p.date?.startsWith(year))), [data.purchases, year]);
+  return (
+    <section className="card ov-half">
+      <div className="card-head">
+        <h2>Purchased</h2>
+      </div>
+      {data.purchases.length === 0 ? (
+        <p className="muted">Nothing yet. Bottles you add with + 🧾 Add a purchase or + 🍷 Add a wine are recorded here from now on.</p>
+      ) : (
+        <>
+          <Columns bars={months} compact detail={(b) => monthDetail("bought")(b as MonthBar)} />
+          <p className="muted small">
+            {plural(t.bottles, "bottle")} bought in {year} for {money(t.spend)}
+            {t.unpriced > 0 && <> + {t.unpriced} unpriced</>}
+            {t.groupBottles > 0 && <> · {t.groupBottles} from Group Buys</>}.
+          </p>
+        </>
+      )}
+    </section>
+  );
+}
+
 /** Sales this year: how many, what they brought in, and the gain over what you paid. */
 function SalesCard({ today }: { today: string }) {
   const { data } = useWorkbook();
@@ -266,8 +300,8 @@ function SalesCard({ today }: { today: string }) {
           <Columns
             bars={months}
             compact
-            title={(b) => `${b.label}: ${b.value} bottle${b.value === 1 ? "" : "s"} sold for ${money((b as (typeof months)[number]).revenue)}`}
-            onPick={(b) => go(`sales/${b.key}`)}
+            detail={(b) => monthDetail("sold")({ key: b.key, value: b.value, money: (b as (typeof months)[number]).revenue })}
+            onOpen={(b) => go(`sales/${b.key}`)}
           />
           <p className="muted small">
             {t.bottles} sold in {year} for {money(t.revenue)}

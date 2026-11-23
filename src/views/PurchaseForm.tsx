@@ -12,6 +12,7 @@ import { SpotSelect, useResolveSpot } from "./SpotPicker";
 import { addGroupBuy } from "../groupbuys";
 import { isMe, knownPeople, ME, newGroupId, personKey } from "../groupbuymodel";
 import { excelSerial, todayIso } from "../notesmodel";
+import { logPurchases, purchaseRow } from "../purchases";
 
 // ---- state ----------------------------------------------------------------------
 
@@ -46,14 +47,19 @@ interface Line {
   split?: Record<string, number>;
   /** Once saved: the cellar wine your share went to ("" if you took none). */
   cellarId?: string;
+  /** Once saved: its row for the Purchases log (none if you took no bottles), and whether that's written. */
+  log?: Record<string, Cell>;
+  logged?: boolean;
 }
 interface Shared {
   source: string;
   where: Location;
   nya: boolean;
   beforeGst: boolean;
-  /** Year bought; defaults to this year. (Optional so drafts saved before it existed still load.) */
+  /** Year bought, from drafts saved before "Bought on" existed. */
   year?: string;
+  /** "YYYY-MM-DD" bought; defaults to today. */
+  date?: string;
   /** Box or rack the bottles go into (only once they've arrived). */
   spot?: string | null;
   /** Split with friends; your share goes to the cellar, everyone's is tracked under Group buys. */
@@ -68,11 +74,16 @@ interface Shared {
 }
 
 const thisYear = () => String(new Date().getFullYear());
-const DEFAULT_SHARED: Shared = { source: "", where: "K Cellars", nya: true, beforeGst: false, year: thisYear() };
+const DEFAULT_SHARED: Shared = { source: "", where: "K Cellars", nya: true, beforeGst: false };
+/** The day bought: today unless changed (an older draft's year becomes 1 January of it). */
+const boughtOn = (s: Shared): string =>
+  s.date ?? (s.year && /^\d{4}$/.test(s.year) && s.year !== thisYear() ? `${s.year}-01-01` : todayIso());
 const yearValue = (s: Shared): number | null => {
-  const y = (s.year ?? thisYear()).trim();
-  return /^\d{4}$/.test(y) ? Number(y) : null;
+  const d = boughtOn(s);
+  return /^\d{4}-\d{2}-\d{2}$/.test(d) ? Number(d.slice(0, 4)) : null;
 };
+/** Every saved line that took bottles has its Purchases row written. */
+const allLogged = (ls: Line[]) => ls.every((l) => l.state !== "saved" || !l.log || l.logged);
 let keyCounter = 0;
 const newKey = () => `line-${Date.now()}-${keyCounter++}`;
 const blankLine = (): Line => ({ key: newKey(), kind: "pick", wineId: "", fields: { ...EMPTY_NEW }, bottles: 1, price: "", state: "idle" });
@@ -83,8 +94,8 @@ function loadDraft(): { shared: Shared; lines: Line[] } | null {
     const raw = localStorage.getItem(DRAFT_KEY);
     if (!raw) return null;
     const d = JSON.parse(raw) as { shared: Shared; lines: Line[] };
-    // A purchase whose lines were all saved is finished; start a fresh one.
-    if (!d.lines?.length || d.lines.every((l) => l.state === "saved")) {
+    // A purchase whose lines were all saved (and logged) is finished; start a fresh one.
+    if (!d.lines?.length || (d.lines.every((l) => l.state === "saved") && allLogged(d.lines))) {
       localStorage.removeItem(DRAFT_KEY);
       return null;
     }
@@ -134,7 +145,7 @@ function validate(l: Line, group = false): string | null {
 // ---- component ------------------------------------------------------------------
 
 export default function PurchaseForm({ startGroup = false }: { startGroup?: boolean }) {
-  const { data, putWine, putGroupBuys } = useWorkbook();
+  const { data, putWine, putGroupBuys, putPurchases } = useWorkbook();
   const toast = useToast();
   const resolveSpot = useResolveSpot();
   const [initial] = useState(() => loadDraft());
@@ -146,8 +157,9 @@ export default function PurchaseForm({ startGroup = false }: { startGroup?: bool
 
   const hasContent = lines.some((l) => l.kind !== "pick") || !!shared.source;
   const linesDone = lines.length > 0 && lines.every((l) => l.state === "saved");
+  const logsDone = allLogged(lines);
   // A group buy is only finished once its GroupBuys record is written too.
-  const finished = linesDone && (!shared.group || !!shared.groupSaved);
+  const finished = linesDone && logsDone && (!shared.group || !!shared.groupSaved);
   useEffect(() => {
     // Once every line is saved there's nothing left to restore, so don't write the draft back.
     if (finished) saveDraft(null);
@@ -187,8 +199,8 @@ export default function PurchaseForm({ startGroup = false }: { startGroup?: bool
     setShowErrors(true);
     const problems = lines.map((l) => validate(l, !!shared.group)).filter(Boolean);
     const y = yearValue(shared);
-    if ((shared.year ?? "").trim() && (y === null || y < 1900 || y > new Date().getFullYear())) {
-      toast({ text: "Year purchased must be a year like 2026.", error: true });
+    if (y === null || y < 1900 || boughtOn(shared) > todayIso()) {
+      toast({ text: "Bought on must be a date, not in the future.", error: true });
       return;
     }
     if (problems.length) {
@@ -212,6 +224,11 @@ export default function PurchaseForm({ startGroup = false }: { startGroup?: bool
     let saved = 0;
     let failed = 0;
     const cellarIds = new Map<string, string>();
+    const logs = new Map<string, Record<string, Cell>>();
+    const date = boughtOn(shared);
+    const groupBuy = group ? (shared.groupName ?? "").trim() || groupId : null;
+    const logRow = (w: Wine, bottles: number, price: number | null) =>
+      purchaseRow(w, { date, bottles, price, source: shared.source, to: shared.where, groupBuy });
     for (const line of lines) {
       if (line.state === "saved") continue;
       setLine(line.key, { state: "saving", message: undefined });
@@ -234,9 +251,12 @@ export default function PurchaseForm({ startGroup = false }: { startGroup?: bool
           });
           putWine(wine);
           cellarIds.set(line.key, line.wineId);
+          const log = logRow(wine, mine, price ?? before?.price ?? null);
+          logs.set(line.key, log);
           setLine(line.key, {
             state: "saved",
             cellarId: line.wineId,
+            log,
             message: `+${mine} at ${shared.where} · now ${wine.qty} bottle${wine.qty === 1 ? "" : "s"}${markedNya ? " · not yet arrived" : ""}${others ? ` · ${others} for friends` : ""}`,
           });
         } else {
@@ -266,7 +286,9 @@ export default function PurchaseForm({ startGroup = false }: { startGroup?: bool
           );
           putWine(wine);
           cellarIds.set(line.key, wine.wineId ?? "");
-          setLine(line.key, { state: "saved", cellarId: wine.wineId ?? "", message: `Added as ${wine.wineId}${others ? ` · ${others} for friends` : ""}` });
+          const log = logRow(wine, mine, price);
+          logs.set(line.key, log);
+          setLine(line.key, { state: "saved", cellarId: wine.wineId ?? "", log, message: `Added as ${wine.wineId}${others ? ` · ${others} for friends` : ""}` });
         }
         saved++;
       } catch (e) {
@@ -274,14 +296,45 @@ export default function PurchaseForm({ startGroup = false }: { startGroup?: bool
         setLine(line.key, { state: "error", message: describeError(e) });
       }
     }
+    // Lines saved earlier whose log row didn't make it go with this batch.
+    for (const l of lines) if (l.state === "saved" && l.log && !l.logged) logs.set(l.key, l.log);
+    const logOk = await saveLogs(logs);
     setBusy(false);
     if (failed) {
       toast({ text: `${saved} saved, ${failed} failed. Fix or retry the lines marked in red.`, error: true });
+    } else if (!logOk) {
+      return;
     } else if (group) {
       await saveGroupRecord(groupId, cellarIds);
     } else {
       saveDraft(null);
       toast({ text: `Purchase saved: ${saved} line${saved === 1 ? "" : "s"}.` });
+    }
+  }
+
+  /** Writes the Purchases log rows for these lines (key → row). Safe to retry. */
+  async function saveLogs(logs: Map<string, Record<string, Cell>>): Promise<boolean> {
+    if (!logs.size) return true;
+    try {
+      putPurchases(await logPurchases(data.file.id, [...logs.values()]));
+      setLines((ls) => ls.map((l) => (logs.has(l.key) ? { ...l, logged: true } : l)));
+      return true;
+    } catch (e) {
+      toast({ text: `Your bottles are saved, but the purchase log couldn't be: ${describeError(e)}. Tap "Save to the purchase log" to retry.`, error: true });
+      return false;
+    }
+  }
+
+  async function retryLogs() {
+    setBusy(true);
+    const logs = new Map(lines.filter((l) => l.state === "saved" && l.log && !l.logged).map((l) => [l.key, l.log!] as const));
+    const ok = await saveLogs(logs);
+    setBusy(false);
+    if (!ok) return;
+    if (shared.group && !shared.groupSaved) await saveGroupRecord(shared.groupId ?? newGroupId());
+    else {
+      saveDraft(null);
+      toast({ text: "Purchase saved." });
     }
   }
 
@@ -333,7 +386,7 @@ export default function PurchaseForm({ startGroup = false }: { startGroup?: bool
 
   function discard() {
     saveDraft(null);
-    setShared({ ...DEFAULT_SHARED, year: thisYear() });
+    setShared({ ...DEFAULT_SHARED });
     setLines([blankLine()]);
     setRestored(false);
     setShowErrors(false);
@@ -393,13 +446,13 @@ export default function PurchaseForm({ startGroup = false }: { startGroup?: bool
           </div>
         </Label>
         {!shared.nya && <SpotSelect loc={shared.where} value={shared.spot ?? null} onChange={(spot) => setShared({ ...shared, spot })} />}
-        <Label text="Year purchased">
+        <Label text="Bought on">
           <input
-            value={shared.year ?? thisYear()}
-            onChange={(e) => setShared({ ...shared, year: e.target.value.replace(/\D/g, "") })}
-            inputMode="numeric"
-            maxLength={4}
-            className="year-input"
+            type="date"
+            value={boughtOn(shared)}
+            max={todayIso()}
+            disabled={lines.some((l) => l.state === "saved")}
+            onChange={(e) => setShared({ ...shared, date: e.target.value || undefined })}
           />
         </Label>
         <label className="switch">
@@ -453,7 +506,12 @@ export default function PurchaseForm({ startGroup = false }: { startGroup?: bool
           wineById={wineById}
           onPaid={shared.groupSaved ? undefined : (who, v) => setShared((s) => ({ ...s, paid: { ...(s.paid ?? {}), [personKey(who)]: v } }))}
         />}
-      {shared.group && linesDone && !shared.groupSaved && (
+      {linesDone && !logsDone && !busy && (
+        <p className="notice">
+          Your bottles are saved. <button className="primary small" disabled={busy} onClick={() => void retryLogs()}>Save to the purchase log</button>
+        </p>
+      )}
+      {shared.group && linesDone && logsDone && !shared.groupSaved && (
         <p className="notice">
           Your bottles are saved. <button className="primary small" disabled={busy} onClick={() => void saveGroupRecord(shared.groupId ?? newGroupId())}>Save the Group Buy record</button>
         </p>
