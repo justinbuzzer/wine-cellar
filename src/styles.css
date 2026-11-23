@@ -596,8 +596,16 @@ button.compare-btn { letter-spacing: 0; padding: 0 12px; font-size: 0.88rem; fle
 .gb-tabs { margin-bottom: 8px; }
 .gb-order { display: block; text-decoration: none; color: inherit; padding: 10px 12px; margin-bottom: 8px; }
 .gb-row { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
-.gb-prog { display: flex; gap: 12px; color: var(--muted); margin-top: 4px; }
-.gb-prog b { color: var(--text); }
+/* Order cards: name, merchant · date · total on the left; Arrived / Paid / Handed counts on the right. */
+.gb-order-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.gb-order-text { display: flex; flex-direction: column; min-width: 0; }
+.gb-order-text > * { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gb-counts { display: flex; gap: 0.5rem; flex: none; }
+.gb-count { display: flex; flex-direction: column; align-items: center; min-width: 2.6rem; }
+.gb-count i { font-style: normal; font-size: 0.62rem; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
+.gb-count b { font-size: 0.88rem; font-variant-numeric: tabular-nums; }
+.gb-count .ok-gold, .gb-alldone { color: var(--gold); }
+.gb-alldone { flex: none; font-size: 0.85rem; font-weight: 600; }
 .gb-h { margin: 0 0 4px; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--accent); }
 .gb-line { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 8px 0; border-top: 1px solid var(--border); }
 .gb-line:first-of-type { border-top: none; }

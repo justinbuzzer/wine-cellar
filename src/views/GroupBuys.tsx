@@ -16,6 +16,15 @@ import { todayIso } from "../notesmodel";
 const money = (n: number) => formatPrice(Math.round(n * 100) / 100, config.currency);
 const fmtDate = (iso: string | null) =>
   iso ? new Date(`${iso}T00:00:00`).toLocaleDateString("en-SG", { day: "numeric", month: "short", year: "numeric" }) : "No date";
+/** "23 Nov" this year, "23 Nov 2025" otherwise. */
+const fmtShort = (iso: string | null) =>
+  iso
+    ? new Date(`${iso}T00:00:00`).toLocaleDateString("en-SG", {
+        day: "numeric",
+        month: "short",
+        ...(iso.slice(0, 4) === String(new Date().getFullYear()) ? {} : { year: "numeric" }),
+      })
+    : "No date";
 const lineName = (l: Pick<GbLine, "producer" | "name" | "vintage">) =>
   [l.producer, shortName({ producer: l.producer, name: l.name }), l.vintage].filter((x) => x !== null && x !== "").join(" ");
 
@@ -86,19 +95,18 @@ function Overview() {
           </div>
           {which === "orders"
             ? orders.map((o) => (
-                <a key={o.id} className="card gb-order" href={href(`groupbuys/order/${encodeURIComponent(o.id)}`)}>
-                  <div className="gb-row">
+                <a key={o.id} className="card gb-order gb-order-row" href={href(`groupbuys/order/${encodeURIComponent(o.id)}`)}>
+                  <span className="gb-order-text">
                     <strong>{orderTitle(o)}</strong>
-                    <span className="muted small">{money(o.total)}</span>
-                  </div>
-                  <span className="muted small">{[o.name ? o.merchant : "", fmtDate(o.date)].filter(Boolean).join(" · ")}</span>
+                    <span className="muted small">{[o.name ? o.merchant : "", fmtShort(o.date), money(o.total)].filter(Boolean).join(" · ")}</span>
+                  </span>
                   {o.done ? (
-                    <span className="ok small">✓ All done</span>
+                    <span className="gb-alldone">✓ All done</span>
                   ) : (
-                    <span className="gb-prog small">
-                      <span>Arrived <b>{o.arrivedLines}/{o.lines.length}</b></span>
-                      <span>Paid <b>{o.paidPeople}/{o.people.length}</b></span>
-                      <span>Handed <b>{o.handedPeople}/{o.people.length}</b></span>
+                    <span className="gb-counts">
+                      <Count label="Arrived" n={o.arrivedLines} of={o.lines.length} />
+                      <Count label="Paid" n={o.paidPeople} of={o.people.length} />
+                      <Count label="Handed" n={o.handedPeople} of={o.people.length} />
                     </span>
                   )}
                 </a>
@@ -118,6 +126,17 @@ function Overview() {
         </>
       )}
     </>
+  );
+}
+
+/** One step of an order: "Paid 2/4", or a gold ✓ once everyone has. */
+function Count({ label, n, of }: { label: string; n: number; of: number }) {
+  const done = of > 0 && n >= of;
+  return (
+    <span className="gb-count" title={`${label}: ${n} of ${of}`}>
+      <i>{label}</i>
+      {of === 0 ? <b className="muted">–</b> : done ? <b className="ok-gold" aria-label="done">✓</b> : <b>{n}/{of}</b>}
+    </span>
   );
 }
 
