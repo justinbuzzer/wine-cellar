@@ -213,7 +213,7 @@ function OrderDetail({ order: o }: { order: GbOrder }) {
           <span className="gb-line-name">{lineName(l)} ×{l.bottles}</span>
           <span className="gb-line-acts">
           <button
-            className={`gb-tick${l.arrived ? " on" : ""}`}
+            className={`gb-tick gb-pill${l.arrived ? " on" : ""}`}
             disabled={busy}
             aria-pressed={l.arrived}
             title={l.mine > 0 ? "Also marks your bottles as arrived in your cellar" : undefined}
@@ -221,7 +221,7 @@ function OrderDetail({ order: o }: { order: GbOrder }) {
           >
             {l.arrived ? "✓ Arrived" : "Arrived?"}
           </button>
-          <button className="link small gb-edit" disabled={busy} onClick={() => setEditing(l)}>Edit split</button>
+          <button className="gb-tick gb-pill" disabled={busy} onClick={() => setEditing(l)}>Edit split</button>
           </span>
         </div>
       ))}
@@ -230,7 +230,7 @@ function OrderDetail({ order: o }: { order: GbOrder }) {
 
       <div className="gb-row gb-me-row">
         <span className="muted small">
-          <strong className="gb-me">Me</strong> · {o.me.bottles ? `${o.me.bottles} btl · ${money(o.me.amount)} · in your cellar` : "no bottles for you"}
+          <strong className="gb-me">Me</strong> · {o.me.bottles ? `${o.me.bottles} btl in your cellar` : "no bottles for you"}
         </span>
         {renaming === null && (
           <button className="link small gb-rename-link" onClick={() => setRenaming(o.name)}>✎ {o.name ? "Rename" : "Name it"}</button>
@@ -243,7 +243,12 @@ function OrderDetail({ order: o }: { order: GbOrder }) {
   );
 }
 
-/** One friend's share of an order: what they're getting, what they owe, and the Paid / Handed over ticks. */
+/**
+ * One friend's share of an order. Left: their name (in an order) or the order
+ * with its amount (on the People tab), and their wines when it's worth listing
+ * them. Right: "1/6 arrived" and "0/6 handed" as a block, beside Paid and,
+ * when there's something to do, Hand over (✓ Handed once done; tap to undo).
+ */
 function PersonShare({
   order, person: p, showOrder, flat, hideWines,
 }: { order: GbOrder; person: GbPerson; showOrder?: boolean; flat?: boolean; hideWines?: boolean }) {
@@ -258,44 +263,53 @@ function PersonShare({
       `Handed ${bottles(p.ready)} to ${p.name}.`,
     );
   const unHand = () => run({ set: p.rows.filter((r) => r.handed).map((r) => ({ rowId: r.rowId, cells: { Handed: "", "Handed Date": "" } })) });
-  const allHanded = p.handed === p.bottles;
+  const allHanded = p.bottles > 0 && p.handed === p.bottles;
+  const arrived = p.bottles - p.coming;
   const stateOf = (r: (typeof rows)[number]) => (r.handed ? "handed over" : r.arrived ? "with you" : "not arrived");
   const mixed = new Set(rows.map(stateOf)).size > 1;
   return (
     <section className={`gb-person${flat ? " flat" : " card"}`}>
-      <div className="gb-share-row">
-        <strong className="gb-share-title">{showOrder ? <a href={href(`groupbuys/order/${encodeURIComponent(order.id)}`)}>{orderTitle(order)} · {fmtShort(order.date)}</a> : <a href={href(`groupbuys/person/${encodeURIComponent(p.name)}`)}>{p.name}</a>}</strong>
-        <span className="gb-share-top">
-          <span className="muted small">{p.bottles} btl · {money(p.amount)}{p.unpriced ? " + unpriced" : ""}</span>
-          <button className={`gb-tick${p.paid ? " on" : ""}`} disabled={busy} aria-pressed={p.paid} onClick={() => void setPaid(!p.paid)}>
+      <div className="gb-share">
+        <div className="gb-share-main">
+          {showOrder ? (
+            <span className="gb-share-title">
+              <a href={href(`groupbuys/order/${encodeURIComponent(order.id)}`)}>{orderTitle(order)} · {fmtShort(order.date)}</a>
+              <span className="muted small"> · {money(p.amount)}{p.unpriced ? " + unpriced" : ""}</span>
+            </span>
+          ) : (
+            <a className="gb-share-title" href={href(`groupbuys/person/${encodeURIComponent(p.name)}`)}>{p.name}</a>
+          )}
+        </div>
+        <span className="gb-share-stat muted small">
+          <span>{arrived}/{p.bottles} arrived</span>
+          <span>{p.handed}/{p.bottles} handed</span>
+        </span>
+        <span className="gb-share-btns">
+          <button className={`gb-tick gb-pill${p.paid ? " on" : ""}`} disabled={busy} aria-pressed={p.paid} onClick={() => void setPaid(!p.paid)}>
             {p.paid ? "✓ Paid" : "Paid?"}
           </button>
+          {allHanded ? (
+            <button className="gb-tick gb-pill on" disabled={busy} onClick={() => void unHand()} title="Handed over. Tap to undo">✓ Handed</button>
+          ) : p.ready > 0 ? (
+            <button className="gb-tick gb-pill" disabled={busy} onClick={() => void handOver()}>Hand over {p.ready}</button>
+          ) : null}
         </span>
       </div>
-      <div className="gb-share-row">
-        {!hideWines && <div className="muted small gb-wines">
+      {/* The wines under the top row, full width, so the order name and block beside it stay on one line. */}
+      {!hideWines && (
+        <div className="muted small gb-wines">
           {rows.map((r) => {
             const l = lineOf(r.line);
-            const state = stateOf(r);
             return (
               <span key={r.rowId}>
                 {l ? lineName(l) : r.name} ×{r.bottles}
-                {/* Each wine's state only when they differ (the right side already says it otherwise). */}
-                {mixed && <em> ({state})</em>}
+                {/* Each wine's state only when they differ. */}
+                {mixed && <em> ({stateOf(r)})</em>}
               </span>
             );
           })}
-        </div>}
-        <span className="gb-share-status">
-          {allHanded ? (
-            <button className="gb-tick on" disabled={busy} onClick={() => void unHand()} title="Tap to undo">✓ Handed over</button>
-          ) : p.ready > 0 ? (
-            <button className="gb-tick" disabled={busy} onClick={() => void handOver()}>Hand over {p.ready}</button>
-          ) : (
-            <span className="muted small">{p.handed ? `${p.handed} handed · ` : ""}{p.coming} not arrived yet</span>
-          )}
-        </span>
-      </div>
+        </div>
+      )}
     </section>
   );
 }
