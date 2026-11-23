@@ -1149,3 +1149,7 @@ body.reading .winelist { border-color: transparent; }
 .rm-reasons { flex-wrap: wrap; }
 .rm-reasons button { flex: 1 1 40%; padding: 8px 6px; font-size: 0.9rem; }
 .rm-purchase { margin: 0 0 8px; }
+
+/* Wine list sheet: other vintages' notes, opened in place. */
+.sheet-others-head { margin-top: 1rem; }
+.sheet-note-vintage { color: var(--text); font-weight: 600; }

@@ -6,7 +6,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { shortName, type Tasting, type Wine } from "../data";
 import { ProducerLogo } from "../logos";
 import { parseNote } from "../notesmodel";
-import { go } from "../router";
 import { useWorkbook } from "../store";
 import { notesForWine } from "../winenotes";
 import { locationLine } from "./Cellar";
@@ -105,25 +104,21 @@ export default function WineSheet({ wine, onClose }: { wine: Wine; onClose: () =
           notes.these.map((t, i) => <SheetNote key={t.tastingId ?? i} t={t} open={i === 0} />)
         )}
 
+        {/* Other vintages open here too, so you stay on the Wine list (and in full screen). */}
         {notes.otherVintages.length > 0 && (
-          <div className="sheet-others">
-            <span className="muted small">Other vintages: </span>
-            {notes.otherVintages.map((t, i) => (
-              <span key={t.tastingId ?? i}>
-                {i > 0 && ", "}
-                <button className="link small" onClick={() => t.tastingId && go(`note/${t.tastingId}`)}>
-                  {t.vintage ?? "?"} ({t.score ?? "–"})
-                </button>
-              </span>
-            ))}
-          </div>
+          <>
+            <div className="sheet-notes-head sheet-others-head">
+              <h3>Other vintages ({notes.otherVintages.length})</h3>
+            </div>
+            {notes.otherVintages.map((t, i) => <SheetNote key={t.tastingId ?? `o${i}`} t={t} open={false} showVintage />)}
+          </>
         )}
       </div>
     </div>
   );
 }
 
-function SheetNote({ t, open: startOpen }: { t: Tasting; open: boolean }) {
+function SheetNote({ t, open: startOpen, showVintage }: { t: Tasting; open: boolean; showVintage?: boolean }) {
   const [open, setOpen] = useState(startOpen);
   const n = parseNote(t.note);
   const when = [t.dateTasted ? formatDay(t.dateTasted) : t.yearTasted, t.ageTasted !== null ? `${t.ageTasted} years old` : null]
@@ -146,7 +141,11 @@ function SheetNote({ t, open: startOpen }: { t: Tasting; open: boolean }) {
   return (
     <div className="sheet-note">
       <button className="sheet-note-head" onClick={() => setOpen((v) => !v)} aria-expanded={open}>
-        <span className="muted small">{when || "Undated"}</span>
+        <span className="muted small">
+          {showVintage && <strong className="sheet-note-vintage">{t.vintage ?? "NV"}</strong>}
+          {showVintage && " · "}
+          {when || "Undated"}
+        </span>
         <span className="sheet-note-score">
           {t.score ?? "–"} <span className="muted" aria-hidden>{open ? "▴" : "▾"}</span>
         </span>
