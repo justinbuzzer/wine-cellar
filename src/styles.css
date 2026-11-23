@@ -630,6 +630,12 @@ button.compare-btn { letter-spacing: 0; padding: 0 12px; font-size: 0.88rem; fle
 .gb-tick { flex: none; border-radius: 999px; padding: 6px 12px; font-size: 0.85rem; }
 .gb-tick.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
 .gb-person .gb-wines { display: flex; flex-direction: column; gap: 1px; margin: 4px 0 8px; }
+/* A friend's share: order and wines on the left; total, Paid and Hand over stacked on the right. */
+.gb-share { display: flex; align-items: flex-start; gap: 10px; }
+.gb-share-main { flex: 1 1 auto; min-width: 0; }
+.gb-person .gb-share-main .gb-wines { margin: 3px 0 0; }
+.gb-share-side { flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 4px; max-width: 48%; text-align: right; }
+.gb-share-side .gb-tick { padding: 3px 10px; font-size: 0.8rem; }
 .gb-person .gb-wines em { font-style: normal; opacity: 0.8; }
 .gb-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .gb-done { padding: 6px 0; border-top: 1px solid var(--border); }

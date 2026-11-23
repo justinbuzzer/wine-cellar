@@ -263,34 +263,41 @@ function PersonShare({ order, person: p, showOrder, flat }: { order: GbOrder; pe
     );
   const unHand = () => run({ set: p.rows.filter((r) => r.handed).map((r) => ({ rowId: r.rowId, cells: { Handed: "", "Handed Date": "" } })) });
   const allHanded = p.handed === p.bottles;
+  const stateOf = (r: (typeof rows)[number]) => (r.handed ? "handed over" : r.arrived ? "with you" : "not arrived");
+  const mixed = new Set(rows.map(stateOf)).size > 1;
   return (
     <section className={`gb-person${flat ? " flat" : " card"}`}>
-      <div className="gb-row">
-        <strong>{showOrder ? <a href={href(`groupbuys/order/${encodeURIComponent(order.id)}`)}>{orderTitle(order)} · {fmtDate(order.date)}</a> : <a href={href(`groupbuys/person/${encodeURIComponent(p.name)}`)}>{p.name}</a>}</strong>
-        <span className="muted small">{bottles(p.bottles)} · {money(p.amount)}{p.unpriced ? " + unpriced" : ""}</span>
-      </div>
-      <div className="muted small gb-wines">
-        {rows.map((r) => {
-          const l = lineOf(r.line);
-          const state = r.handed ? "handed over" : r.arrived ? "with you" : "not arrived";
-          return (
-            <span key={r.rowId}>
-              {l ? lineName(l) : r.name} ×{r.bottles} <em>({state})</em>
-            </span>
-          );
-        })}
-      </div>
-      <div className="gb-actions">
-        <button className={`gb-tick${p.paid ? " on" : ""}`} disabled={busy} aria-pressed={p.paid} onClick={() => void setPaid(!p.paid)}>
-          {p.paid ? "✓ Paid" : "Paid?"}
-        </button>
-        {allHanded ? (
-          <button className="gb-tick on" disabled={busy} onClick={() => void unHand()} title="Tap to undo">✓ Handed over</button>
-        ) : p.ready > 0 ? (
-          <button className="gb-tick" disabled={busy} onClick={() => void handOver()}>Hand over {p.ready} arrived</button>
-        ) : (
-          <span className="muted small">{p.handed ? `${p.handed} handed over · ` : ""}{p.coming} not arrived yet</span>
-        )}
+      <div className="gb-share">
+        <div className="gb-share-main">
+          <strong>{showOrder ? <a href={href(`groupbuys/order/${encodeURIComponent(order.id)}`)}>{orderTitle(order)} · {fmtDate(order.date)}</a> : <a href={href(`groupbuys/person/${encodeURIComponent(p.name)}`)}>{p.name}</a>}</strong>
+          <div className="muted small gb-wines">
+            {rows.map((r) => {
+              const l = lineOf(r.line);
+              const state = stateOf(r);
+              return (
+                <span key={r.rowId}>
+                  {l ? lineName(l) : r.name} ×{r.bottles}
+                  {/* Each wine's state only when they differ (the right side already says it otherwise). */}
+                  {mixed && <em> ({state})</em>}
+                </span>
+              );
+            })}
+          </div>
+        </div>
+        {/* On the right, under the total: Paid, then Hand over (or what's still to arrive). */}
+        <div className="gb-share-side">
+          <span className="muted small">{bottles(p.bottles)} · {money(p.amount)}{p.unpriced ? " + unpriced" : ""}</span>
+          <button className={`gb-tick${p.paid ? " on" : ""}`} disabled={busy} aria-pressed={p.paid} onClick={() => void setPaid(!p.paid)}>
+            {p.paid ? "✓ Paid" : "Paid?"}
+          </button>
+          {allHanded ? (
+            <button className="gb-tick on" disabled={busy} onClick={() => void unHand()} title="Tap to undo">✓ Handed over</button>
+          ) : p.ready > 0 ? (
+            <button className="gb-tick" disabled={busy} onClick={() => void handOver()}>Hand over {p.ready}</button>
+          ) : (
+            <span className="muted small">{p.handed ? `${p.handed} handed · ` : ""}{p.coming} not arrived yet</span>
+          )}
+        </div>
       </div>
     </section>
   );
