@@ -186,8 +186,11 @@ function OrderDetail({ order: o }: { order: GbOrder }) {
   const [arriving, setArriving] = useState<GbLine[] | null>(null);
   const [editing, setEditing] = useState<GbLine | null>(null);
   const [renaming, setRenaming] = useState<string | null>(null);
+  /** Once every wine has arrived the list shrinks to a record; this shows the full rows again. */
+  const [showWines, setShowWines] = useState(false);
   const { busy, run } = useGroupWrite();
   const waiting = o.lines.filter((l) => !l.arrived);
+  const arrivedAll = waiting.length === 0;
   /** Every wine still to arrive, in one go (asks where your bottles went if you have a share). */
   const allArrived = () =>
     waiting.some((l) => l.mine > 0 && l.wineId)
@@ -222,6 +225,24 @@ function OrderDetail({ order: o }: { order: GbOrder }) {
           <button className="gb-tick gb-pill" disabled={busy} onClick={allArrived}>All arrived</button>
         </div>
       )}
+      {arrivedAll && !showWines ? (
+        <div className="gb-arrived">
+          <div className="gb-row">
+            <span className="gb-arrived-tick">✓ All arrived</span>
+            <button className="link small" onClick={() => setShowWines(true)}>Edit</button>
+          </div>
+          <ul className="muted small gb-arrived-list">
+            {o.lines.map((l) => <li key={l.line}>{lineName(l)} ×{l.bottles}</li>)}
+          </ul>
+        </div>
+      ) : (
+        <>
+      {arrivedAll && (
+        <div className="gb-row gb-all-row">
+          <span className="gb-arrived-tick">✓ All arrived</span>
+          <button className="link small" onClick={() => setShowWines(false)}>Done</button>
+        </div>
+      )}
       {o.lines.map((l) => (
         <div key={l.line} className="gb-line">
           {/* Who gets how many is in each friend's row and the Me line, so here just the wine and its total. */}
@@ -240,8 +261,10 @@ function OrderDetail({ order: o }: { order: GbOrder }) {
           </span>
         </div>
       ))}
+        </>
+      )}
 
-      {o.people.map((p) => <PersonShare key={p.name} order={o} person={p} flat hideWines={o.lines.length === 1} />)}
+      {o.people.map((p) => <PersonShare key={p.name} order={o} person={p} flat hideWines={o.lines.length === 1} shrinkWhenDone />)}
 
       <div className="gb-row gb-me-row">
         <span className="muted small">
@@ -265,9 +288,11 @@ function OrderDetail({ order: o }: { order: GbOrder }) {
  * when there's something to do, Hand over (✓ Handed once done; tap to undo).
  */
 function PersonShare({
-  order, person: p, showOrder, flat, hideWines,
-}: { order: GbOrder; person: GbPerson; showOrder?: boolean; flat?: boolean; hideWines?: boolean }) {
+  order, person: p, showOrder, flat, hideWines, shrinkWhenDone,
+}: { order: GbOrder; person: GbPerson; showOrder?: boolean; flat?: boolean; hideWines?: boolean; shrinkWhenDone?: boolean }) {
   const { busy, run } = useGroupWrite();
+  /** Paid and handed over: just "✓ Complete" until tapped. */
+  const [opened, setOpened] = useState(false);
   const rows = p.rows.filter((r) => r.bottles > 0);
   const lineOf = (n: number) => order.lines.find((l) => l.line === n);
   const setPaid = (paid: boolean) =>
@@ -279,6 +304,16 @@ function PersonShare({
     );
   const unHand = () => run({ set: p.rows.filter((r) => r.handed).map((r) => ({ rowId: r.rowId, cells: { Handed: "", "Handed Date": "" } })) });
   const allHanded = p.bottles > 0 && p.handed === p.bottles;
+  if (shrinkWhenDone && p.paid && allHanded && !opened) {
+    return (
+      <section className={`gb-person gb-person-done${flat ? " flat" : " card"}`}>
+        <button type="button" className="gb-row gb-person-head" onClick={() => setOpened(true)} title="Paid and handed over. Tap to see it again">
+          <span className="gb-share-title">{p.name}</span>
+          <span className="gb-arrived-tick">✓ Complete</span>
+        </button>
+      </section>
+    );
+  }
   const arrived = p.bottles - p.coming;
   const stateOf = (r: (typeof rows)[number]) => (r.handed ? "handed over" : r.arrived ? "with you" : "not arrived");
   const mixed = new Set(rows.map(stateOf)).size > 1;
