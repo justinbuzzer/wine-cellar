@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { config } from "../config";
 import { formatPrice } from "../data";
 import { LOCATIONS, type Location } from "../locations";
@@ -9,7 +9,8 @@ import { cellarStats, drinkingStats, MIN_NOTES, noteStats, regionLabel, topN, ty
 import { showInNotes } from "./Notes";
 import { go, href } from "../router";
 import { useWorkbook } from "../store";
-import { useStocktake } from "../stocktake";
+import { readPastStocktakes, useStocktake } from "../stocktake";
+import { monthsBetween } from "../prefs";
 
 import { TypeDot } from "../ui";
 import { TYPE_ORDER, typeLabel } from "../winelist";
@@ -44,14 +45,35 @@ function LogoProgress() {
   );
 }
 
-/** Link to the stocktake, with progress while one is under way. */
+/** Date of your last stocktake ("YYYY-MM-DD"; null: none yet). Read once per visit. */
+let lastStocktake: string | null | undefined;
+
+/** Link to the stocktake: progress while one is under way, and a reminder when one is due (Settings). */
 function StocktakeLink() {
+  const { data } = useWorkbook();
   const st = useStocktake();
   const counted = st ? Object.keys(st.counts).length : 0;
+  const [last, setLast] = useState(lastStocktake);
+  useEffect(() => {
+    if (last !== undefined) return;
+    readPastStocktakes(data.file.id)
+      .then((past) => setLast((lastStocktake = past.find((p) => p.date)?.date ?? null)))
+      .catch(() => {});
+  }, [last, data.file.id]);
+  const every = data.prefs?.stocktakeMonths ?? 0;
+  const since = last ? monthsBetween(last, todayIso()) : null;
+  const due = !st && every > 0 && since !== null && since >= every;
+  const lastText = last ? new Date(`${last}T00:00:00`).toLocaleDateString("en-SG", { day: "numeric", month: "short", year: "numeric" }) : null;
   return (
-    <a className="card prompt-card" href={href("stocktake")}>
-      <strong>Stocktake</strong>
-      <span className="muted">{st ? `In progress: ${counted} wine${counted === 1 ? "" : "s"} counted →` : "Check your bottles against your list →"}</span>
+    <a className={`card prompt-card${due ? " due" : ""}`} href={href("stocktake")}>
+      <strong>{due ? "Stocktake due" : "Stocktake"}</strong>
+      <span className="muted">
+        {st
+          ? `In progress: ${counted} wine${counted === 1 ? "" : "s"} counted →`
+          : due
+            ? `Last one ${since} month${since === 1 ? "" : "s"} ago (${lastText}) →`
+            : `Check your bottles against your list${lastText ? ` · last ${lastText}` : ""} →`}
+      </span>
     </a>
   );
 }

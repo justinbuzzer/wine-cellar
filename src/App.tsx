@@ -4,7 +4,7 @@ import { isAllowed, signIn, signOut } from "./auth";
 import { config } from "./config";
 import { href, useRoute } from "./router";
 import { useWorkbook, WorkbookGate } from "./store";
-import { BackToTop, InstallButton, ToastProvider } from "./ui";
+import { BackToTop, ToastProvider } from "./ui";
 import Cellar from "./views/Cellar";
 import Diagnostics from "./views/Diagnostics";
 import WineDetail from "./views/WineDetail";
@@ -42,16 +42,17 @@ export default function App({ account }: { account: AccountInfo | null }) {
   }
   if (!isAllowed(account)) {
     return (
-      <Shell account={account}>
+      <Shell>
         <section className="card center">
           <p>This account isn't authorised to use this app.</p>
+          <button className="link" onClick={() => void signOut()}>Sign out</button>
         </section>
       </Shell>
     );
   }
   return (
     <ToastProvider>
-      <Shell account={account} tabs>
+      <Shell tabs>
         <WorkbookGate>
           <LogoProvider>
             <TestBanner />
@@ -121,7 +122,7 @@ function TabIcon({ path }: { path: string }) {
   );
 }
 
-function Shell({ account, tabs, children }: { account?: AccountInfo; tabs?: boolean; children: ReactNode }) {
+function Shell({ tabs, children }: { tabs?: boolean; children: ReactNode }) {
   const route = useRoute();
   const section =
     route[0] === "wine" || route[0] === "add" || route[0] === "edit" || route[0] === "purchase" || route[0] === "sell" || route[0] === "stocktake" || route[0] === "storage" || !route[0]
@@ -167,22 +168,10 @@ function Shell({ account, tabs, children }: { account?: AccountInfo; tabs?: bool
             ))}
           </nav>
         )}
-        <div className="topbar-right">
-          {account && (
-            <div className="who">
-              <span>{account.name}</span>
-              <button className="link" onClick={() => signOut()}>Sign out</button>
-            </div>
-          )}
-        </div>
+
       </header>
       <main>{children}</main>
       {tabs && isListPage && <BackToTop />}
-      {account && (
-        <footer className="foot">
-          <a href={href("diagnostics")}>Diagnostics</a> <InstallButton />
-        </footer>
-      )}
     </div>
   );
 }

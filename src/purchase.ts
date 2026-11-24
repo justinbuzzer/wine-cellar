@@ -1,6 +1,10 @@
 // Pure helpers for the "Add a purchase" screen (type-only imports; unit-testable).
 
-export const GST_RATE = 9;
+/** GST in %: 9 unless changed in Settings (set from the workbook when it loads). */
+export let GST_RATE = 9;
+export function setGstRate(pct: number) {
+  GST_RATE = pct;
+}
 
 /** Price per bottle as stored: after GST. Returns null for blank/invalid input. */
 export function storedPrice(input: string, beforeGst: boolean, ratePct = GST_RATE): number | null {

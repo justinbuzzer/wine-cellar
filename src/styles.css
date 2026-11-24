@@ -1173,3 +1173,19 @@ body.reading .winelist { border-color: transparent; }
 .gb-arrived .gb-row { align-items: center; }
 .gb-arrived-list { list-style: none; margin: 2px 0 0; padding: 0; line-height: 1.35; }
 .gb-person.gb-person-done { padding-top: 0.45rem; margin-top: 0.45rem; }
+
+/* Settings: purchases and stocktake, friends, account and data, tools. */
+.set-sub { margin-top: 1rem; }
+.set-gst { display: inline-flex; align-items: center; gap: 4px; }
+.set-gst input { width: 4rem; text-align: right; }
+.set-friends { list-style: none; margin: 0; padding: 0; }
+.set-friends li { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0.45rem 0; border-top: 1px solid var(--border); }
+.set-friends li:first-child { border-top: none; }
+.set-friends .split-new { flex: 1; }
+.set-account .set-file { text-align: right; overflow-wrap: anywhere; }
+.set-account-end { justify-content: space-between; align-items: center; margin-top: 0.5rem; }
+.set-tools { display: flex; flex-direction: column; gap: 0.6rem; }
+.set-tools a { text-decoration: none; }
+/* Overview: a stocktake that's due stands out. */
+.prompt-card.due { border-color: var(--gold); box-shadow: inset 3px 0 0 var(--gold); }
+.prompt-card.due strong { color: var(--accent); }

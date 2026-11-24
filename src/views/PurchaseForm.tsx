@@ -16,6 +16,7 @@ import { logPurchases, purchaseRow } from "../purchases";
 import { groupBottles, planInvoice, type Invoice, type InvoicePlan } from "../invoicemodel";
 import { labelFields, labelReaderOn, matchLabel, type LabelResult } from "../label";
 import PurchasePhotos from "./PurchasePhotos";
+import type { AppPrefs } from "../prefs";
 
 // ---- state ----------------------------------------------------------------------
 
@@ -79,7 +80,8 @@ interface Shared {
 }
 
 const thisYear = () => String(new Date().getFullYear());
-const DEFAULT_SHARED: Shared = { source: "", where: "K Cellars", nya: true, beforeGst: false };
+/** A new purchase starts from your Settings: where bottles go and whether they've arrived. */
+const defaultShared = (p: AppPrefs): Shared => ({ source: "", where: p.defaultWhere, nya: p.defaultNya, beforeGst: false });
 /** The day bought: today unless changed (an older draft's year becomes 1 January of it). */
 const boughtOn = (s: Shared): string =>
   s.date ?? (s.year && /^\d{4}$/.test(s.year) && s.year !== thisYear() ? `${s.year}-01-01` : todayIso());
@@ -154,7 +156,7 @@ export default function PurchaseForm({ startGroup = false }: { startGroup?: bool
   const toast = useToast();
   const resolveSpot = useResolveSpot();
   const [initial] = useState(() => loadDraft());
-  const [shared, setShared] = useState<Shared>(initial?.shared ?? { ...DEFAULT_SHARED, group: startGroup });
+  const [shared, setShared] = useState<Shared>(initial?.shared ?? { ...defaultShared(data.prefs), group: startGroup });
   const [lines, setLines] = useState<Line[]>(initial?.lines?.length ? initial.lines : [blankLine()]);
   const [restored, setRestored] = useState(!!initial);
   const [busy, setBusy] = useState(false);
@@ -430,7 +432,7 @@ export default function PurchaseForm({ startGroup = false }: { startGroup?: bool
 
   function discard() {
     saveDraft(null);
-    setShared({ ...DEFAULT_SHARED });
+    setShared(defaultShared(data.prefs));
     setLines([blankLine()]);
     setRestored(false);
     setShowErrors(false);

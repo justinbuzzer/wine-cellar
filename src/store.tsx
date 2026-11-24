@@ -24,6 +24,8 @@ import { toSale, type Sale } from "./salesmodel";
 import { readDrafts, toDraft, type Draft } from "./drafts";
 import { readSettings, SETTINGS_TABLE } from "./settings";
 import { layoutFromRows, type Layout } from "./spots";
+import { prefsFromRows, type AppPrefs } from "./prefs";
+import { setGstRate } from "./purchase";
 import { readGroupBuys } from "./groupbuys";
 import { toGbRow, type GbRow } from "./groupbuymodel";
 import { readPurchases } from "./purchases";
@@ -56,6 +58,8 @@ export interface WorkbookData {
   drafts: Draft[];
   /** K Cellars boxes and Home racks (Settings page; empty until set up). */
   layout: Layout;
+  /** Purchase defaults and the stocktake reminder (Settings; in the same table as the layout). */
+  prefs: AppPrefs;
   /** Group buys split with friends (the "GroupBuys" table; empty until the first). */
   groupBuys: GbRow[];
   /** Bottles you bought, by date (the "Purchases" table; empty until the first purchase after it was added). */
@@ -106,6 +110,7 @@ export async function loadWorkbook(file: DriveItem): Promise<WorkbookData> {
     hasSales: sold.value !== null,
     drafts: rowsOf(drafts.value).map(toDraft).filter((d) => d.draftId),
     layout: layoutFromRows(rowsOf(settings.value)),
+    prefs: prefsFromRows(rowsOf(settings.value)),
     groupBuys: rowsOf(groups.value).map(toGbRow).filter((r) => r.rowId && r.groupId),
     purchases: rowsOf(bought.value).map(toPurchase).filter((p) => p.purchaseId),
     saleLists: rowsOf(forSale.value).map(toSlRow).filter((r) => r.rowId && r.listId),
@@ -148,6 +153,13 @@ interface Store {
   putDraft(d: Draft): void;
   removeDraft(draftId: string): void;
   putLayout(l: Layout): void;
+  putPrefs(p: AppPrefs): void;
+  /** When the workbook was last read from OneDrive (null: showing this device's saved copy). */
+  syncedAt: number | null;
+  /** Reading the workbook again now. */
+  syncing: boolean;
+  /** Re-read the workbook from OneDrive in the background. */
+  refresh(): Promise<void>;
   /** Replace the group buy rows after a write (writes return them all). */
   putGroupBuys(rows: GbRow[]): void;
   /** Replace the purchase log after a write (writes return it all). */
@@ -180,7 +192,7 @@ type Sync =
   | { state: "failed"; savedAt: number; message: string };
 
 /** Bump when WorkbookData changes shape, so an old offline copy is ignored. */
-const SNAPSHOT_VERSION = 7;
+const SNAPSHOT_VERSION = 8;
 
 function snapshotKey(): string {
   return `v${SNAPSHOT_VERSION}:${import.meta.env.MODE}:${msal.getActiveAccount()?.homeAccountId ?? "none"}`;
@@ -195,6 +207,7 @@ export function WorkbookGate({ children }: { children: ReactNode }) {
   const [phase, setPhase] = useState<Phase>({ kind: "finding" });
   const [sync, setSync] = useState<Sync>({ state: "fresh" });
   const cachedAt = useRef<number | null>(null);
+  const [syncedAt, setSyncedAt] = useState<number | null>(null);
   const key = snapshotKey();
 
   const open = useCallback(async (file: DriveItem) => {
@@ -202,6 +215,7 @@ export function WorkbookGate({ children }: { children: ReactNode }) {
     try {
       setPhase({ kind: "loaded", data: await loadWorkbook(file) });
       setSync({ state: "fresh" });
+      setSyncedAt(Date.now());
     } catch (e) {
       setPhase({ kind: "error", message: describeError(e) });
     }
@@ -236,6 +250,7 @@ export function WorkbookGate({ children }: { children: ReactNode }) {
       if (!file) return void search();
       setPhase({ kind: "loaded", data: await loadWorkbook(file) });
       setSync({ state: "fresh" });
+      setSyncedAt(Date.now());
     } catch (e) {
       // "Offline" only when the device itself says so; otherwise show what failed.
       setSync(
@@ -263,6 +278,12 @@ export function WorkbookGate({ children }: { children: ReactNode }) {
       cancelled = true;
     };
   }, [key, find, refresh]);
+
+  // GST used across the app follows the workbook's setting.
+  const gst = phase.kind === "loaded" ? phase.data.prefs?.gstRate : undefined;
+  useEffect(() => {
+    if (typeof gst === "number") setGstRate(gst);
+  }, [gst]);
 
   // Keep the offline copy up to date with what's on screen (only fresh data).
   useEffect(() => {
@@ -383,6 +404,10 @@ export function WorkbookGate({ children }: { children: ReactNode }) {
         p.kind !== "loaded" ? p : { kind: "loaded", data: { ...p.data, drafts: p.data.drafts.filter((x) => x.draftId !== id) } },
       ),
     putLayout: (l) => setPhase((p) => (p.kind !== "loaded" ? p : { kind: "loaded", data: { ...p.data, layout: l } })),
+    putPrefs: (pr) => setPhase((p) => (p.kind !== "loaded" ? p : { kind: "loaded", data: { ...p.data, prefs: pr } })),
+    syncedAt,
+    syncing: sync.state === "updating",
+    refresh,
     putGroupBuys: (rows) => setPhase((p) => (p.kind !== "loaded" ? p : { kind: "loaded", data: { ...p.data, groupBuys: rows } })),
     putPurchases: (rows) => setPhase((p) => (p.kind !== "loaded" ? p : { kind: "loaded", data: { ...p.data, purchases: rows } })),
     putSaleLists: (rows) => setPhase((p) => (p.kind !== "loaded" ? p : { kind: "loaded", data: { ...p.data, saleLists: rows } })),

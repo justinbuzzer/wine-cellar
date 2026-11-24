@@ -7,6 +7,7 @@ import { withSession, type TableSnapshot, type Workbook } from "./graph";
 import { readLog } from "./logtable";
 import { cellAddress } from "./sheet";
 import { layoutRows, type Layout } from "./spots";
+import { prefsRows, type AppPrefs } from "./prefs";
 
 export const SETTINGS_SHEET = "App Settings";
 export const SETTINGS_TABLE = "AppSettings";
@@ -17,7 +18,16 @@ export function readSettings(wb: Workbook): Promise<TableSnapshot | null> {
 
 /** Saves the storage layout (adds the sheet and table the first time). */
 export function saveLayout(itemId: string, layout: Layout): Promise<void> {
-  const rows = layoutRows(layout);
+  return saveSettings(itemId, layoutRows(layout));
+}
+
+/** Saves the purchase defaults and stocktake reminder. */
+export function savePrefs(itemId: string, prefs: AppPrefs): Promise<void> {
+  return saveSettings(itemId, prefsRows(prefs));
+}
+
+/** Writes Setting / Value rows: changed values in place, new settings added (the sheet and table the first time). */
+function saveSettings(itemId: string, rows: [string, Cell][]): Promise<void> {
   return withSession(itemId, async (wb) => {
     const snap = await readSettings(wb);
     if (!snap) {
