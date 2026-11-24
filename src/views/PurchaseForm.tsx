@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { config } from "../config";
-import { formatPrice, shortName, type Cell, type Wine } from "../data";
+import { formatPrice, norm, shortName, type Cell, type Wine } from "../data";
 import { findSameWine } from "../dupes";
 import { addWine, receiveBottles } from "../inventory";
 import { LOCATIONS, type Location } from "../locations";
@@ -13,6 +13,9 @@ import { addGroupBuy } from "../groupbuys";
 import { isMe, knownPeople, ME, newGroupId, personKey } from "../groupbuymodel";
 import { excelSerial, todayIso } from "../notesmodel";
 import { logPurchases, purchaseRow } from "../purchases";
+import { groupBottles, planInvoice, type Invoice, type InvoicePlan } from "../invoicemodel";
+import { labelFields, labelReaderOn, matchLabel, type LabelResult } from "../label";
+import PurchasePhotos from "./PurchasePhotos";
 
 // ---- state ----------------------------------------------------------------------
 
@@ -50,6 +53,8 @@ interface Line {
   /** Once saved: its row for the Purchases log (none if you took no bottles), and whether that's written. */
   log?: Record<string, Cell>;
   logged?: boolean;
+  /** From an invoice: something worth checking on this line. */
+  check?: string;
 }
 interface Shared {
   source: string;
@@ -177,6 +182,45 @@ export default function PurchaseForm({ startGroup = false }: { startGroup?: bool
     () => [...new Set(data.wines.map((w) => w.source).filter((x): x is string => !!x))].sort((a, b) => a.localeCompare(b)),
     [data.wines],
   );
+
+  // ---- from pictures: an invoice, or bottle photos ----
+  const [scan, setScan] = useState<{ inv: Invoice; plan: InvoicePlan } | null>(null);
+  /** A wine the reader found, as a purchase line: a wine you already have if it's an exact match, else a new wine. */
+  const lineFromLabel = (label: LabelResult, bottles: number, price: string, check: string | null): Line => {
+    const have = matchLabel(label, data.wines, data.tastings).find((m) => m.kind === "cellar" && m.exact);
+    if (have) return { ...blankLine(), kind: "existing", wineId: (have.wine as Wine).wineId ?? "", bottles: Math.max(1, bottles), price, check: check ?? undefined };
+    const { fields } = labelFields(label, data.lists);
+    return { ...blankLine(), kind: "new", fields: { ...EMPTY_NEW, ...fields }, bottles: Math.max(1, bottles), price, check: check ?? undefined };
+  };
+  /** New lines replace any empty ones. */
+  const addLines = (more: Line[]) => setLines((ls) => [...ls.filter((l) => !(l.kind === "pick" && l.state === "idle")), ...more]);
+  /** The merchant as it's already spelled in your workbook, if it's there. */
+  const knownSource = (merchant: string) => {
+    const m = norm(merchant);
+    if (!m) return "";
+    return sources.find((x) => norm(x) === m) ?? sources.find((x) => norm(x).includes(m) || m.includes(norm(x))) ?? merchant;
+  };
+  function fromInvoice(inv: Invoice) {
+    const plan = planInvoice(inv, GST_RATE);
+    addLines(plan.lines.map((l) => lineFromLabel(l.label, l.bottles, l.price, l.check)));
+    setShared((sh) => ({
+      ...sh,
+      source: knownSource(inv.merchant) || sh.source,
+      date: inv.date && inv.date <= todayIso() ? inv.date : sh.date,
+      beforeGst: inv.pricesIncludeGst === "unknown" ? sh.beforeGst : plan.beforeGst,
+    }));
+    setScan({ inv, plan });
+    setShowErrors(false);
+  }
+  function fromBottles(bottles: LabelResult[]) {
+    const groups = groupBottles(bottles);
+    if (!groups.length) {
+      toast({ text: "No wine labels could be read in those photos.", error: true });
+      return;
+    }
+    addLines(groups.map((g) => lineFromLabel(g.label, g.count, "", null)));
+    toast({ text: `Added ${groups.length} wine${groups.length === 1 ? "" : "s"} from the photos. Add the prices.` });
+  }
 
   const pending = lines.filter((l) => l.kind !== "pick" && l.state !== "saved");
   const summary = summarize(
@@ -406,6 +450,9 @@ export default function PurchaseForm({ startGroup = false }: { startGroup?: bool
         {data.groupBuys.length > 0 && <a href={href("groupbuys")}>Group Buys →</a>}
       </div>
 
+      {labelReaderOn() && !lines.some((l) => l.state === "saved") && <PurchasePhotos onInvoice={fromInvoice} onBottles={fromBottles} />}
+      {scan && <InvoiceSummary scan={scan} onClose={() => setScan(null)} />}
+
       <section className="card note-section">
         <label className="switch">
           <input
@@ -550,6 +597,37 @@ export default function PurchaseForm({ startGroup = false }: { startGroup?: bool
   );
 }
 
+/** What was read from an invoice, and whether it adds up to the invoice total. */
+function InvoiceSummary({ scan: { inv, plan }, onClose }: { scan: { inv: Invoice; plan: InvoicePlan }; onClose: () => void }) {
+  const money = (n: number) => formatPrice(Math.round(n * 100) / 100, config.currency);
+  const date = inv.date
+    ? new Date(`${inv.date}T00:00:00`).toLocaleDateString("en-SG", { day: "numeric", month: "short", year: "numeric" })
+    : "no date";
+  const gst = inv.pricesIncludeGst === "no" ? `GST added (${GST_RATE}%)` : inv.pricesIncludeGst === "yes" ? "GST included or none" : "GST unclear";
+  const ok = plan.totalMatches !== false && plan.lines.every((l) => !l.check);
+  return (
+    <section className={`card invoice-sum${ok ? " ok" : " check"}`}>
+      <div className="card-head">
+        <span>
+          Read from the invoice: <strong>{inv.merchant || "unknown merchant"}</strong> · {date} · {gst} · {plan.lines.length} wine{plan.lines.length === 1 ? "" : "s"}, {plan.bottles} bottle{plan.bottles === 1 ? "" : "s"}
+        </span>
+        <button type="button" className="link" aria-label="Close" onClick={onClose}>✕</button>
+      </div>
+      <p className="small">
+        {plan.totalMatches === true && (
+          <>Wines{inv.delivery > 0 ? " + delivery" : ""}{inv.pricesIncludeGst === "no" ? " + GST" : ""} = <strong>{money(plan.expectedTotal)}</strong> ✓ matches the invoice total</>
+        )}
+        {plan.totalMatches === false && (
+          <>These add up to <strong>{money(plan.expectedTotal)}</strong> but the invoice says <strong>{money(inv.total)}</strong> ({plan.difference > 0 ? "+" : "−"}{money(Math.abs(plan.difference))}). Check the lines marked below.</>
+        )}
+        {plan.totalMatches === null && <>The wines come to <strong>{money(plan.winesTotal)}</strong>. No invoice total was found to check against.</>}
+      </p>
+      <p className="small muted">Each price below is what one bottle cost in the end: {plan.adjustments.join(" ") || "as printed."}</p>
+      {plan.warnings.map((w) => <p key={w} className="small muted">{w}</p>)}
+    </section>
+  );
+}
+
 // ---- one line ---------------------------------------------------------------------
 
 function LineCard({
@@ -596,6 +674,7 @@ function LineCard({
       </div>
 
       {line.message && <p className={line.state === "error" ? "warn" : "ok"}>{line.message}</p>}
+      {line.check && line.state !== "saved" && <p className="warn small">{line.check}</p>}
       {error && <p className="warn">{error}</p>}
 
       {line.state === "saved" ? null : line.kind === "pick" ? (

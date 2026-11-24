@@ -1,5 +1,7 @@
 import { useMemo, useState, type ReactNode } from "react";
-import { shortName, type Cell, type Wine } from "../data";
+import { shortName, type Cell, type Tasting, type Wine } from "../data";
+import { labelReaderOn } from "../label";
+import LabelFill, { type LabelApply } from "./LabelFill";
 import { findSameWine } from "../dupes";
 import { addWine, adjustBottles, updateWine } from "../inventory";
 import { go, href } from "../router";
@@ -122,6 +124,23 @@ export default function WineForm({ id }: { id?: string }) {
   const [spots, setSpots] = useState<{ kc: string | null; home: string | null }>({ kc: null, home: null });
   const resolveSpot = useResolveSpot();
   const set = (k: keyof FormState) => (e: { target: { value: string } }) => setF((p) => ({ ...p, [k]: e.target.value }));
+  /** Fields the label reader inferred or found hard to read. */
+  const [unsure, setUnsure] = useState<string[]>([]);
+  /** Fill from label photos: the reader's answer replaces the wine details (bottles, price and source stay). */
+  const applyLabel = (a: LabelApply) => {
+    setF((p) => ({ ...p, ...a.fields }));
+    setUnsure(a.unsure);
+  };
+  /** The label matched a wine you have or tasted: copy its details (an exact cellar match then offers "add the bottles instead"). */
+  const pickFromLabel = (w: Wine | Tasting) => {
+    const t = (v: string | number | null | undefined) => (v === null || v === undefined ? "" : String(v));
+    setF((p) => ({
+      ...p,
+      producer: t(w.producer), name: t(w.name), vintage: t(w.vintage), type: t(w.type), country: t(w.country),
+      region: t(w.region), location: t(w.location), varietal: t(w.varietal), blend: t(w.blend), alcohol: t(w.alcohol),
+    }));
+    setUnsure([]);
+  };
 
   // Suggestions from what's already in your spreadsheet keep spellings consistent.
   const suggest = useMemo(() => {
@@ -235,6 +254,8 @@ export default function WineForm({ id }: { id?: string }) {
         }}
       >
         <h2>{adding ? "Add a wine" : `Edit ${original?.wineId}`}</h2>
+        {adding && labelReaderOn() && <LabelFill compact onApply={applyLabel} onPick={pickFromLabel} />}
+        {unsure.length > 0 && <p className="notice small">From the label: check the {unsure.join(", ")}.</p>}
 
         <Field label="Producer *">
           <input value={f.producer} onChange={set("producer")} list="dl-producer" autoComplete="off" />

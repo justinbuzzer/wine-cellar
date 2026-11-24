@@ -1157,3 +1157,12 @@ body.reading .winelist { border-color: transparent; }
 
 /* Open order: "All arrived" when two or more wines are still to arrive. */
 .gb-all-row { align-items: center; padding: 2px 0 6px; }
+
+/* Add a purchase from pictures: invoice or bottle photos, and what the invoice added up to. */
+.purchase-photos .label-buttons { margin-top: 0; }
+.purchase-photos .pdf-thumb { display: flex; align-items: center; justify-content: center; padding: 6px; font-size: 0.8rem; text-align: center; overflow-wrap: anywhere; }
+.invoice-sum { border-left: 4px solid var(--gold); }
+.invoice-sum.ok { border-left-color: var(--ok); }
+.invoice-sum.check { border-left-color: var(--warn); }
+.invoice-sum .card-head { align-items: flex-start; gap: 8px; font-size: 0.9rem; }
+.invoice-sum p { margin: 4px 0 0; }

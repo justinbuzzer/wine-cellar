@@ -6,6 +6,7 @@ import { getToken } from "./auth";
 import { config } from "./config";
 import { norm, shortName, type Tasting, type Wine } from "./data";
 import { sameWineKey, vintageKey } from "./dupes";
+import type { Invoice } from "./invoicemodel";
 
 export const LABEL_FIELDS = ["producer", "name", "vintage", "type", "country", "region", "location", "varietal", "blend", "alcohol"] as const;
 export type LabelField = (typeof LABEL_FIELDS)[number];
@@ -80,6 +81,49 @@ export async function readBottles(images: { mediaType: string; data: string }[],
   if (!res.ok || !Array.isArray(body.bottles)) throw new LabelReaderError(body.error ?? `The label reader failed (${res.status}).`, body.userId);
   if (body.readable === false) return [];
   return body.bottles.map((b) => ({ ...b, readable: true }));
+}
+
+/** An invoice file for the reader: a PDF as it is, a screenshot or photo shrunk like a label. */
+export async function invoiceFile(file: File): Promise<{ mediaType: string; data: string; preview: string | null; name: string }> {
+  if (file.type === "application/pdf" || /.pdf$/i.test(file.name)) {
+    if (file.size > 4_500_000) throw new Error("That PDF is too large (over 4.5 MB).");
+    const data = await new Promise<string>((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => {
+        const url = String(r.result);
+        resolve(url.slice(url.indexOf(",") + 1));
+      };
+      r.onerror = () => reject(new Error("That PDF couldn't be opened."));
+      r.readAsDataURL(file);
+    });
+    return { mediaType: "application/pdf", data, preview: null, name: file.name };
+  }
+  return { ...(await shrinkPhoto(file)), name: file.name };
+}
+
+/** An invoice (PDF and/or photos) read by the label reader: the order, each wine line and the totals. */
+export async function readInvoice(files: { mediaType: string; data: string }[], hints: Hints): Promise<Invoice> {
+  if (!config.labelReaderUrl) throw new LabelReaderError("The invoice reader isn't set up yet.");
+  if (navigator.onLine === false) throw new LabelReaderError("You're offline. Reading an invoice needs a connection.");
+  const token = await getToken();
+  let res: Response;
+  try {
+    res = await fetch(`${config.labelReaderUrl}/invoice`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ images: files, ...hints }),
+    });
+  } catch {
+    throw new LabelReaderError("Couldn't reach the invoice reader. Check your connection and try again.");
+  }
+  const body = (await res.json().catch(() => ({}))) as { error?: string; userId?: string; invoice?: Invoice };
+  if (!res.ok || !body.invoice) {
+    throw new LabelReaderError(
+      res.status === 404 ? "The invoice reader isn't switched on yet (the Worker needs updating)." : body.error ?? `The invoice reader failed (${res.status}).`,
+      body.userId,
+    );
+  }
+  return body.invoice;
 }
 
 /** A one-line name for a bottle the reader found, e.g. "Torbreck Descendant 2018". */
