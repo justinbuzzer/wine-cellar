@@ -300,9 +300,11 @@ export default function WineDetail({ id }: { id: string }) {
           </div>
         )}
         <div className="actions">
+          {/* Bottles that haven't arrived can be sold, but not drunk. */}
           <button
             className="primary"
-            disabled={!hasLocations || busy || stocked.length === 0}
+            disabled={!hasLocations || busy || stocked.length === 0 || wine.status === "NYA"}
+            title={wine.status === "NYA" ? "Not arrived yet: mark it arrived first" : undefined}
             onClick={() => setDialog("open")}
           >
             🍷 Open a bottle

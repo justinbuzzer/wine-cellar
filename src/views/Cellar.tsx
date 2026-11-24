@@ -4,11 +4,12 @@ import { formatPrice, shortName, type Wine } from "../data";
 import { LOCATIONS, type Location } from "../locations";
 import { ProducerLogo } from "../logos";
 import { forgetScroll, go, href } from "../router";
-import { useWorkbook } from "../store";
+import { describeError, useWorkbook } from "../store";
 import { useStocktake } from "../stocktake";
-import { bottles, FilterHeader, restoreListPosition, TypeDot, useLongPress } from "../ui";
+import { bottles, FilterHeader, Modal, restoreListPosition, TypeDot, useLongPress, useToast } from "../ui";
 import { sellable } from "./SellForm";
-import { MoveSheet } from "./SpotPicker";
+import { MoveSheet, NEW_LOOSE, SpotSelect, useResolveSpot } from "./SpotPicker";
+import { markArrived } from "../inventory";
 import { ForSaleSheet } from "./SaleLists";
 import { vintageBucket, vintageBuckets } from "../overview";
 import { spendOn } from "../spend";
@@ -148,6 +149,8 @@ export default function Cellar() {
   const [moving, setMoving] = useState<Wine[] | null>(null);
   /** Wines picked to put on a sale list. */
   const [listing, setListing] = useState<string[] | null>(null);
+  /** Not-yet-arrived wines picked to mark as arrived together. */
+  const [arriving, setArriving] = useState<Wine[] | null>(null);
   const toggle = (id: string) =>
     setPicked((p) => {
       const s = new Set(p);
@@ -155,7 +158,10 @@ export default function Cellar() {
       else s.add(id);
       return s.size ? s : null;
     });
-  const pickedBottles = picked ? data.wines.filter((w) => picked.has(w.wineId ?? "")).reduce((s, w) => s + w.qty, 0) : 0;
+  const pickedWines = picked ? data.wines.filter((w) => picked.has(w.wineId ?? "")) : [];
+  const pickedBottles = pickedWines.reduce((s, w) => s + w.qty, 0);
+  // "✓ Arrived" only when every picked wine is not yet arrived (it takes Move's place: those bottles aren't here to move).
+  const allNya = pickedWines.length > 0 && pickedWines.every((w) => (w.status ?? "").toUpperCase() === "NYA");
 
   return (
     <>
@@ -334,11 +340,25 @@ export default function Cellar() {
           </span>
           <button type="button" className="link" onClick={() => setPicked(null)}>Cancel</button>
           <span className="select-actions">
-            <button type="button" onClick={() => setMoving(data.wines.filter((w) => picked.has(w.wineId ?? "")))}>⇄ Move</button>
+            {allNya ? (
+              <button type="button" onClick={() => setArriving(pickedWines)}>✓ Arrived</button>
+            ) : (
+              <button type="button" onClick={() => setMoving(pickedWines)}>⇄ Move</button>
+            )}
             <button type="button" onClick={() => setListing([...picked])}>🏷️ For sale</button>
             <button type="button" className="primary" onClick={() => go(`sell/${[...picked].join(",")}`)}>💰 Sell {picked.size}</button>
           </span>
         </div>
+      )}
+      {arriving && (
+        <ArrivedSheet
+          wines={arriving}
+          onClose={() => setArriving(null)}
+          onDone={() => {
+            setArriving(null);
+            setPicked(null);
+          }}
+        />
       )}
       {listing && (
         <ForSaleSheet
@@ -358,7 +378,59 @@ export default function Cellar() {
           }}
         />
       )}
-      {!picked && list.some(sellable) && <p className="muted small center-text">Press and hold a wine to pick several to sell or move.</p>}
+      {!picked && list.some(sellable) && <p className="muted small center-text">Press and hold a wine to pick several to sell, move or mark arrived.</p>}
     </>
+  );
+}
+
+/** Several not-yet-arrived wines arrived: one place (and box) for all of them. */
+function ArrivedSheet({ wines, onClose, onDone }: { wines: Wine[]; onClose: () => void; onDone: () => void }) {
+  const { data, putWine } = useWorkbook();
+  const toast = useToast();
+  const resolveSpot = useResolveSpot();
+  const homeOnly = wines.every((w) => (w.home ?? 0) > 0 && (w.kc ?? 0) === 0);
+  const [loc, setLoc] = useState<Location>(homeOnly ? "Home" : "K Cellars");
+  const [spot, setSpot] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [step, setStep] = useState("");
+  const total = wines.reduce((n, w) => n + w.qty, 0);
+
+  async function save() {
+    setBusy(true);
+    let done = 0;
+    try {
+      // A "new loose box" is made once and used for every wine.
+      const s = await resolveSpot(spot);
+      for (const w of wines) {
+        setStep(`${done + 1} of ${wines.length}`);
+        putWine(await markArrived(data.file.id, w.wineId!, loc, s));
+        done++;
+      }
+      toast({ text: `${done} wine${done === 1 ? "" : "s"} marked as arrived at ${loc}${s ? ` · ${s}` : ""}.` });
+      onDone();
+    } catch (e) {
+      toast({ text: `${done} of ${wines.length} marked as arrived, then: ${describeError(e)}`, error: true });
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal title="Where did the bottles go?" onClose={onClose}>
+      <p className="muted">
+        {wines.length} wine{wines.length === 1 ? "" : "s"} · {bottles(total)} not yet arrived
+      </p>
+      <div className="seg">
+        {LOCATIONS.map((l) => (
+          <button key={l} className={l === loc ? "on" : ""} onClick={() => { setLoc(l); setSpot(null); }}>{l}</button>
+        ))}
+      </div>
+      <SpotSelect loc={loc} value={spot} onChange={setSpot} />
+      <p className="muted small">They all go to the same place. To use different boxes, mark them one by one or move them afterwards.</p>
+      <div className="actions">
+        <button className="primary" disabled={busy} onClick={() => void save()}>
+          {busy ? `Saving ${step}…` : `✓ ${wines.length} arrived at ${loc}${spot && spot !== NEW_LOOSE ? ` · ${spot}` : ""}`}
+        </button>
+      </div>
+    </Modal>
   );
 }
