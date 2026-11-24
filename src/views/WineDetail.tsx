@@ -2,6 +2,7 @@ import { useState } from "react";
 import { config } from "../config";
 import { formatPrice, norm, shortName, type Tasting, type Wine } from "../data";
 import { adjustBottles, markArrived } from "../inventory";
+import { arriveGroupBuyWines } from "../groupbuys";
 import { openBottle, undoOpen } from "../history";
 import { newestOpenings, noteFor } from "../historymodel";
 import { todayIso } from "../notesmodel";
@@ -53,7 +54,7 @@ function FromSpot({ w, loc, value, onChange }: { w: Wine; loc: Location; value: 
 }
 
 export default function WineDetail({ id }: { id: string }) {
-  const { data, putWine, putOpening, removeOpening, putSale, removeSale, putPurchases } = useWorkbook();
+  const { data, putWine, putOpening, removeOpening, putSale, removeSale, putPurchases, putGroupBuys } = useWorkbook();
   const toast = useToast();
   const resolveSpot = useResolveSpot();
   const [busy, setBusy] = useState(false);
@@ -480,7 +481,12 @@ export default function WineDetail({ id }: { id: string }) {
           busy={busy}
           onClose={() => setDialog(null)}
           onSave={(l, chosen) =>
-            void act(async () => markArrived(itemId, id, l, await resolveSpot(chosen)), `Marked as arrived at ${l}.`)
+            void act(async () => {
+              const w = await markArrived(itemId, id, l, await resolveSpot(chosen));
+              // Its Group Buy line (if you bought it in one) has arrived too.
+              await arriveGroupBuyWines(itemId, [id]).then((rows) => rows && putGroupBuys(rows), () => {});
+              return w;
+            }, `Marked as arrived at ${l}.`)
           }
         />
       )}

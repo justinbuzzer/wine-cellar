@@ -10,6 +10,7 @@ import { bottles, FilterHeader, Modal, restoreListPosition, TypeDot, useLongPres
 import { sellable } from "./SellForm";
 import { MoveSheet, NEW_LOOSE, SpotSelect, useResolveSpot } from "./SpotPicker";
 import { markArrived } from "../inventory";
+import { arriveGroupBuyWines } from "../groupbuys";
 import { ForSaleSheet } from "./SaleLists";
 import { vintageBucket, vintageBuckets } from "../overview";
 import { spendOn } from "../spend";
@@ -385,7 +386,7 @@ export default function Cellar() {
 
 /** Several not-yet-arrived wines arrived: one place (and box) for all of them. */
 function ArrivedSheet({ wines, onClose, onDone }: { wines: Wine[]; onClose: () => void; onDone: () => void }) {
-  const { data, putWine } = useWorkbook();
+  const { data, putWine, putGroupBuys } = useWorkbook();
   const toast = useToast();
   const resolveSpot = useResolveSpot();
   const homeOnly = wines.every((w) => (w.home ?? 0) > 0 && (w.kc ?? 0) === 0);
@@ -406,7 +407,10 @@ function ArrivedSheet({ wines, onClose, onDone }: { wines: Wine[]; onClose: () =
         putWine(await markArrived(data.file.id, w.wineId!, loc, s));
         done++;
       }
-      toast({ text: `${done} wine${done === 1 ? "" : "s"} marked as arrived at ${loc}${s ? ` · ${s}` : ""}.` });
+      // Their Group Buy lines (where you bought them in one) have arrived too.
+      const gb = await arriveGroupBuyWines(data.file.id, wines.map((w) => w.wineId!)).catch(() => null);
+      if (gb) putGroupBuys(gb);
+      toast({ text: `${done} wine${done === 1 ? "" : "s"} marked as arrived at ${loc}${s ? ` · ${s}` : ""}${gb ? ", and in Group Buys" : ""}.` });
       onDone();
     } catch (e) {
       toast({ text: `${done} of ${wines.length} marked as arrived, then: ${describeError(e)}`, error: true });

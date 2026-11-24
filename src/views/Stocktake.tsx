@@ -6,6 +6,7 @@ import type { Location } from "../locations";
 import { todayIso } from "../notesmodel";
 import { go, href } from "../router";
 import { describeError, useWorkbook } from "../store";
+import { arriveGroupBuyWines } from "../groupbuys";
 import {
   applyPlan, endStocktake, pickUpSaved, readPastStocktakes, savePlan, setChoice, setCount, startStocktake, undoStocktake,
   updateStocktake, useStocktake, useStocktakeSync, type PastStocktake,
@@ -547,6 +548,9 @@ function Review() {
     try {
       const r = await applyPlan(file, st!, plan, (step) => setPhase({ kind: "applying", step }));
       lastApplied = { changed: r.changed, skipped: r.skipped };
+      // Not-yet-arrived wines found in the count have arrived: tick their Group Buy lines too.
+      const arrived = plan.wines.filter((w) => w.clearNya).map((w) => w.wineId);
+      if (arrived.length) await arriveGroupBuyWines(file, arrived).catch(() => null);
       try {
         await endStocktake(file);
       } catch {
