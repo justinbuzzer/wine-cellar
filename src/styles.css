@@ -1228,5 +1228,17 @@ main:has(.wine-bar) { padding-bottom: 76px; }
 .note-section h3, .st-review h3, .set-group { text-transform: none; letter-spacing: normal; font-size: 0.95rem; }
 .spot-sub, .where h3, .move-to, .fam-group, .st-group h3, .st-group summary { text-transform: none; letter-spacing: normal; font-size: 0.85rem; color: var(--text); opacity: 0.85; }
 .cmp-pick-text small { text-transform: none; letter-spacing: normal; font-size: 0.75rem; }
-/* Phones: the tab dock floats at the bottom, so the wine page bar sits just above it. */
-@media (max-width: 720px) { .wine-bar { bottom: calc(var(--dock-space) + 2px); } }
+.wine-bar-back { display: none; }
+/* Phones: on a wine page the action bar takes the tab dock's place (one floating bar, with a way back). */
+@media (max-width: 720px) {
+  .app:has(.wine-bar) .tabs.dock { display: none; }
+  .app:has(.wine-bar) { --dock-space: 0px; }
+  .wine-bar { bottom: calc(8px + env(safe-area-inset-bottom)); left: 10px; right: 10px; width: auto; transform: none; }
+  .wine-bar-back { display: flex; align-items: center; justify-content: center; flex: 0 0 2.6rem; border: 1px solid var(--border); border-radius: 999px; text-decoration: none; color: var(--text); font-size: 1.1rem; }
+  body:has(.wine-bar) .toast { bottom: calc(80px + env(safe-area-inset-bottom)); }
+  .wine-bar { gap: 6px; padding: 6px; }
+  .wine-bar > button, .wine-bar .more-wrap > button { min-width: 0; padding-left: 6px; padding-right: 6px; font-size: 0.9rem; overflow: hidden; text-overflow: ellipsis; }
+  .wine-bar .more-wrap { flex: 0 0 auto; }
+  .wine-bar > button.primary { flex: 1 1 auto; }
+  .wine-bar > button:not(.primary), .wine-bar .more-wrap > button { flex: 0 0 auto; }
+}

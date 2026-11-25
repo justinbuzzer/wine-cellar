@@ -303,6 +303,8 @@ export default function WineDetail({ id }: { id: string }) {
         )}
         {/* Kept at the bottom of the screen: the main action, Sell, and the rest under More. */}
         <div className="wine-bar">
+          {/* Phones: this bar takes the tab dock's place, so it carries the way back. */}
+          <a className="wine-bar-back" href={href("cellar")} aria-label="Back to the Cellar" title="Back to the Cellar">←</a>
           {/* Bottles that haven't arrived can be sold, but not drunk: Mark arrived takes Open's place. */}
           {wine.status === "NYA" ? (
             <button className="primary" disabled={busy} onClick={() => setDialog("arrived")}>✓ Mark arrived</button>
