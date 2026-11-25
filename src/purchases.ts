@@ -7,6 +7,7 @@ import { withSession, type TableSnapshot, type Workbook } from "./graph";
 import { appendLogs, readLog, type LogSpec } from "./logtable";
 import { excelSerial } from "./notesmodel";
 import { PURCHASE_COLUMNS, toPurchase, type Purchase } from "./purchasemodel";
+import { locateById, setCells } from "./tableops";
 
 export const PURCHASE_SPEC: LogSpec = {
   table: "Purchases",
@@ -46,6 +47,15 @@ export function purchaseRow(
     To: p.to ?? "",
     "Group Buy": (p.groupBuy ?? "").trim(),
   };
+}
+
+/** Changes cells on existing purchase rows (e.g. a Group Buy's date or price was corrected). Returns every purchase afterwards. */
+export function changePurchases(itemId: string, set: { purchaseId: string; cells: Record<string, Cell> }[]): Promise<Purchase[]> {
+  return withSession(itemId, async (wb) => {
+    const snap = await readPurchases(wb);
+    if (snap) for (const s of set) await setCells(wb, locateById(snap, "PurchaseID", s.purchaseId, "Purchase"), s.cells);
+    return allPurchases(wb);
+  });
 }
 
 /** Adds purchase rows. Returns every purchase afterwards. */

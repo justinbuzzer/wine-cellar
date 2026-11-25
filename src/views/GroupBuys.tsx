@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { config } from "../config";
-import { formatPrice, shortName, type Cell } from "../data";
+import { formatPrice, norm, shortName, type Cell } from "../data";
 import { changeGroupBuy, today } from "../groupbuys";
 import { friends, groupOrders, isMe, ME, orderTitle, personKey, totals, type GbLine, type GbOrder, type GbPerson } from "../groupbuymodel";
 import { addWine, adjustBottles, moveBottles, updateWine } from "../inventory";
@@ -10,8 +10,8 @@ import { placementOf } from "../spots";
 import { describeError, useWorkbook } from "../store";
 import { bottles, Modal, useToast } from "../ui";
 import { NEW_LOOSE, SpotSelect, useResolveSpot } from "./SpotPicker";
-import { logPurchases, purchaseRow } from "../purchases";
-import { todayIso } from "../notesmodel";
+import { changePurchases, logPurchases, purchaseRow } from "../purchases";
+import { excelSerial, todayIso } from "../notesmodel";
 
 const money = (n: number) => formatPrice(Math.round(n * 100) / 100, config.currency);
 /** "23 Nov" this year, "23 Nov 2025" otherwise. */
@@ -184,8 +184,7 @@ function Count({ label, n, of }: { label: string; n: number; of: number }) {
 /** Inside an order's expanded card: name it, mark wines arrived, change the split, and each friend's Paid / Hand over. */
 function OrderDetail({ order: o }: { order: GbOrder }) {
   const [arriving, setArriving] = useState<GbLine[] | null>(null);
-  const [editing, setEditing] = useState<GbLine | null>(null);
-  const [renaming, setRenaming] = useState<string | null>(null);
+  const [editing, setEditing] = useState(false);
   /** Once every wine has arrived the list shrinks to a record; this shows the full rows again. */
   const [showWines, setShowWines] = useState(false);
   const { busy, run } = useGroupWrite();
@@ -204,21 +203,6 @@ function OrderDetail({ order: o }: { order: GbOrder }) {
 
   return (
     <div className="gb-order-body">
-      {renaming !== null ? (
-        <div className="split-new gb-rename">
-          <input value={renaming} autoFocus placeholder="e.g. Burgundy 2021 release" onChange={(e) => setRenaming(e.target.value)} />
-          <button
-            className="primary small"
-            disabled={busy}
-            onClick={async () => {
-              if (await run({ set: o.lines.flatMap((l) => l.rows).map((r) => ({ rowId: r.rowId, cells: { "Group Name": renaming.trim() } })) }, "Renamed.")) setRenaming(null);
-            }}
-          >
-            Save
-          </button>
-          <button className="link" onClick={() => setRenaming(null)}>Cancel</button>
-        </div>
-      ) : null}
       {waiting.length > 1 && (
         <div className="gb-row gb-all-row">
           <span className="muted small">{waiting.length} wines still to arrive</span>
@@ -257,7 +241,6 @@ function OrderDetail({ order: o }: { order: GbOrder }) {
           >
             {l.arrived ? "✓ Arrived" : "Arrived?"}
           </button>
-          <button className="gb-tick gb-pill" disabled={busy} onClick={() => setEditing(l)}>Edit split</button>
           </span>
         </div>
       ))}
@@ -270,13 +253,11 @@ function OrderDetail({ order: o }: { order: GbOrder }) {
         <span className="muted small">
           <strong className="gb-me">Me</strong> · {o.me.bottles ? `${o.me.bottles} btl in your cellar` : "no bottles for you"}
         </span>
-        {renaming === null && (
-          <button className="link small gb-rename-link" onClick={() => setRenaming(o.name)}>✎ {o.name ? "Rename" : "Name it"}</button>
-        )}
+        <button className="gb-tick gb-pill" disabled={busy} onClick={() => setEditing(true)}>✎ Edit order</button>
       </div>
 
       {arriving && <ArriveShare order={o} lines={arriving} onClose={() => setArriving(null)} />}
-      {editing && <EditSplit order={o} line={editing} onClose={() => setEditing(null)} />}
+      {editing && <EditOrder order={o} onClose={() => setEditing(false)} />}
     </div>
   );
 }
@@ -453,135 +434,232 @@ function ArriveShare({ order, lines, onClose }: { order: GbOrder; lines: GbLine[
 }
 
 /** Change who takes how many of one wine. Your own share changes your cellar too. */
-function EditSplit({ order, line, onClose }: { order: GbOrder; line: GbLine; onClose: () => void }) {
+/**
+ * Edit a whole order in one sheet: its name, merchant and date, and each wine's
+ * price and split. Your share follows into your cellar and Purchases log (as
+ * Edit split did); friends' paid and handed ticks stay on their existing bottles.
+ */
+function EditOrder({ order, onClose }: { order: GbOrder; onClose: () => void }) {
   const { data, putWine, putPurchases } = useWorkbook();
   const toast = useToast();
-  const { busy, run } = useGroupWrite();
-  const start = useMemo(() => {
-    const m: Record<string, number> = { [ME]: 0 };
-    for (const r of line.rows) m[isMe(r.person) ? ME : r.person] = (m[isMe(r.person) ? ME : r.person] ?? 0) + r.bottles;
-    return m;
-  }, [line]);
-  const [split, setSplit] = useState(start);
-  const [name, setName] = useState("");
+  const { run } = useGroupWrite();
+  const starts = useMemo(
+    () =>
+      order.lines.map((line) => {
+        const m: Record<string, number> = { [ME]: 0 };
+        for (const r of line.rows) m[isMe(r.person) ? ME : r.person] = (m[isMe(r.person) ? ME : r.person] ?? 0) + r.bottles;
+        return m;
+      }),
+    [order],
+  );
+  const [name, setName] = useState(order.name);
+  const [merchant, setMerchant] = useState(order.merchant);
+  const [date, setDate] = useState(order.date ?? "");
+  const [prices, setPrices] = useState(order.lines.map((l) => (l.price === null ? "" : String(l.price))));
+  const [splits, setSplits] = useState(starts);
+  const [adding, setAdding] = useState<{ i: number; who: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const names = [ME, ...Object.keys(split).filter((k) => !isMe(k))];
-  const total = Object.values(split).reduce((s, n) => s + n, 0);
+  const [saving, setSaving] = useState(false);
+  const known = useMemo(() => [...new Set(data.groupBuys.map((r) => r.person).filter((x) => x && !isMe(x)))].sort(), [data.groupBuys]);
+  const priceOf = (s: string): number | null => {
+    const t = s.replace(/[^0-9.]/g, "");
+    return t && Number.isFinite(Number(t)) ? Math.round(Number(t) * 100) / 100 : null;
+  };
+  const bump = (i: number, who: string, by: number) =>
+    setSplits((ss) => ss.map((s, k) => (k === i ? { ...s, [who]: Math.max(0, (s[who] ?? 0) + by) } : s)));
+  const sum = (s: Record<string, number>) => Object.values(s).reduce((a, n) => a + n, 0);
+  const myTotal = splits.reduce((a, s) => a + (s[ME] ?? 0), 0);
+  const friendTotal = splits.reduce((a, s) => a + sum(s) - (s[ME] ?? 0), 0);
 
   async function save() {
     setError(null);
-    const to: Location = line.to ?? "K Cellars";
-    const delta = (split[ME] ?? 0) - (start[ME] ?? 0);
+    const newName = name.trim();
+    const newMerchant = merchant.trim() || order.merchant;
+    const newDate = date || order.date || "";
+    const orderCells: Record<string, Cell> = {};
+    if (newName !== order.name) orderCells["Group Name"] = newName;
+    if (newMerchant !== order.merchant) orderCells.Merchant = newMerchant;
+    if (newDate && newDate !== order.date) orderCells["Order Date"] = excelDate(newDate);
+    const groupName = newName || order.id;
+    const boughtOn = newDate || todayIso();
+
+    const set = new Map<string, Record<string, Cell>>();
+    const put = (rowId: string, cells: Record<string, Cell>) => set.set(rowId, { ...(set.get(rowId) ?? {}), ...cells });
+    const add: Record<string, Cell>[] = [];
+    const remove: string[] = [];
+    const bought: Record<string, Cell>[] = [];
+    /** Purchase rows' new prices, by wine. */
+    const repriced = new Map<string, number | null>();
+    setSaving(true);
     try {
-      let wineId = line.wineId;
-      let bought: Record<string, Cell> | null = null;
-      // Your share changed: the cellar follows.
-      if (delta !== 0) {
-        let changed = null;
-        if (wineId) {
-          changed = await adjustBottles(data.file.id, wineId, { [to]: delta });
-          putWine(changed);
-        } else if (delta > 0) {
-          changed = await addWine(
-            data.file.id,
-            { Producer: line.producer ?? "", Name: line.name ?? "", Vintage: line.vintage ?? "", Price: line.price ?? "", Source: order.merchant, Status: line.arrived ? "" : "NYA" },
-            { kc: to === "K Cellars" ? delta : 0, home: to === "Home" ? delta : 0 },
-          );
-          putWine(changed);
-          wineId = changed.wineId;
+      for (const [i, line] of order.lines.entries()) {
+        const start = starts[i];
+        const split = splits[i];
+        const price = priceOf(prices[i]);
+        const priceChanged = price !== line.price;
+        const to: Location = line.to ?? "K Cellars";
+        const delta = (split[ME] ?? 0) - (start[ME] ?? 0);
+        let wineId = line.wineId;
+        // Your share changed: the cellar and your Purchases log follow (dated with the order).
+        if (delta !== 0) {
+          let changed = null;
+          if (wineId) {
+            changed = await adjustBottles(data.file.id, wineId, { [to]: delta });
+            putWine(changed);
+          } else if (delta > 0) {
+            changed = await addWine(
+              data.file.id,
+              { Producer: line.producer ?? "", Name: line.name ?? "", Vintage: line.vintage ?? "", Price: price ?? "", Source: newMerchant, Status: line.arrived ? "" : "NYA" },
+              { kc: to === "K Cellars" ? delta : 0, home: to === "Home" ? delta : 0 },
+            );
+            putWine(changed);
+            wineId = changed.wineId;
+          }
+          if (changed) bought.push(purchaseRow(changed, { date: boughtOn, bottles: delta, price, source: newMerchant, to, groupBuy: groupName }));
         }
-        // Your purchase grew or shrank: dated with the order, so its month stays right.
-        if (changed) {
-          bought = purchaseRow(changed, {
-            date: order.date ?? todayIso(), bottles: delta, price: line.price, source: order.merchant, to, groupBuy: order.name || order.id,
-          });
+        // A corrected price: your cellar's price follows if it was this order's price.
+        if (priceChanged && line.wineId) {
+          repriced.set(line.wineId, price);
+          const w = data.wines.find((x) => x.wineId === line.wineId);
+          if (w && price !== null && w.price === line.price) putWine(await updateWine(data.file.id, line.wineId, { Price: price }));
         }
-      }
-      const set: { rowId: string; cells: Record<string, Cell> }[] = [];
-      const remove: string[] = [];
-      const add: Record<string, Cell>[] = [];
-      const first = line.rows[0];
-      const newRow = (who: string, n: number): Record<string, Cell> => ({
-        GroupID: order.id, "Order Date": first.date ? excelDate(first.date) : today(), Merchant: order.merchant, Line: line.line,
-        WineID: wineId ?? "", Producer: line.producer ?? "", Name: line.name ?? "", Vintage: line.vintage ?? "", Price: line.price ?? "",
-        Person: who, Bottles: n, To: isMe(who) ? to : "", Arrived: line.arrived ? "Yes" : "", "Arrived Date": line.arrived ? today() : "",
-      });
-      for (const [who, n] of Object.entries(split)) {
-        const rows = line.rows.filter((r) => (isMe(who) ? isMe(r.person) : personKey(r.person) === personKey(who)));
-        const have = rows.reduce((s, r) => s + r.bottles, 0);
-        if (n > have) {
-          // Extra bottles start unpaid and not handed over: a row of their own if the existing one is ticked.
-          const open = rows.find((r) => !r.paid && !r.handed);
-          if (open) set.push({ rowId: open.rowId, cells: { Bottles: open.bottles + n - have } });
-          else add.push(newRow(who, n - have));
-        } else if (n < have) {
-          // Fewer: take them off unticked rows first.
-          let cut = have - n;
-          for (const r of [...rows].sort((a, b) => Number(a.paid || a.handed) - Number(b.paid || b.handed))) {
-            if (cut <= 0) break;
-            const k = Math.min(cut, r.bottles);
-            cut -= k;
-            if (k === r.bottles) remove.push(r.rowId);
-            else set.push({ rowId: r.rowId, cells: { Bottles: r.bottles - k } });
+
+        const first = line.rows[0];
+        const newRow = (who: string, n: number): Record<string, Cell> => ({
+          GroupID: order.id, "Order Date": newDate ? excelDate(newDate) : first.date ? excelDate(first.date) : today(), Merchant: newMerchant, Line: line.line,
+          WineID: wineId ?? "", Producer: line.producer ?? "", Name: line.name ?? "", Vintage: line.vintage ?? "", Price: price ?? "",
+          Person: isMe(who) ? ME : who, Bottles: n, To: isMe(who) ? to : "", Arrived: line.arrived ? "Yes" : "", "Arrived Date": line.arrived ? today() : "",
+          "Group Name": newName,
+        });
+        for (const [who, n] of Object.entries(split)) {
+          const rows = line.rows.filter((r) => (isMe(who) ? isMe(r.person) : personKey(r.person) === personKey(who)));
+          const have = rows.reduce((s, r) => s + r.bottles, 0);
+          if (n > have) {
+            // Extra bottles start unpaid and not handed over: a row of their own if the existing one is ticked.
+            const open = rows.find((r) => !r.paid && !r.handed);
+            if (open) put(open.rowId, { Bottles: open.bottles + n - have });
+            else add.push(newRow(who, n - have));
+          } else if (n < have) {
+            // Fewer: take them off unticked rows first.
+            let cut = have - n;
+            for (const r of [...rows].sort((a, b) => Number(a.paid || a.handed) - Number(b.paid || b.handed))) {
+              if (cut <= 0) break;
+              const k = Math.min(cut, r.bottles);
+              cut -= k;
+              if (k === r.bottles) remove.push(r.rowId);
+              else put(r.rowId, { Bottles: r.bottles - k });
+            }
           }
         }
-      }
-      // A new cellar wine: link every row of this wine to it.
-      if (wineId && wineId !== line.wineId) {
         for (const r of line.rows) {
           if (remove.includes(r.rowId)) continue;
-          const s = set.find((x) => x.rowId === r.rowId);
-          if (s) s.cells.WineID = wineId;
-          else set.push({ rowId: r.rowId, cells: { WineID: wineId } });
+          if (priceChanged) put(r.rowId, { Price: price ?? "" });
+          if (wineId && wineId !== line.wineId) put(r.rowId, { WineID: wineId });
+          if (Object.keys(orderCells).length) put(r.rowId, orderCells);
         }
       }
-      const ok = await run({ set, add, remove }, "Split updated.");
-      if (ok) onClose();
-      if (bought) {
-        try {
-          putPurchases(await logPurchases(data.file.id, [bought]));
-        } catch (e) {
-          toast({ text: `Split updated, but the purchase log couldn't be: ${describeError(e)}`, error: true });
-        }
+
+      if (!set.size && !add.length && !remove.length) {
+        toast({ text: "Nothing changed." });
+        onClose();
+        return;
+      }
+      const ok = await run({ set: [...set].map(([rowId, cells]) => ({ rowId, cells })), add, remove }, "Order updated.");
+      if (!ok) return;
+      onClose();
+
+      // Your Purchases log rows for this order follow its name, merchant, date and prices.
+      try {
+        const mine = data.purchases.filter(
+          (x) => (x.groupBuy === (order.name || order.id) || x.groupBuy === order.id) && norm(x.source) === norm(order.merchant),
+        );
+        const fix = mine
+          .map((x) => {
+            const cells: Record<string, Cell> = {};
+            if (newName !== order.name) cells["Group Buy"] = groupName;
+            if (newMerchant !== order.merchant) cells.Source = newMerchant;
+            if (newDate && newDate !== order.date) cells["Date Bought"] = excelSerial(newDate);
+            if (x.wineId && repriced.has(x.wineId)) cells.Price = repriced.get(x.wineId) ?? "";
+            return { purchaseId: x.purchaseId, cells };
+          })
+          .filter((x) => Object.keys(x.cells).length);
+        if (fix.length) putPurchases(await changePurchases(data.file.id, fix));
+        if (bought.length) putPurchases(await logPurchases(data.file.id, bought));
+      } catch (e) {
+        toast({ text: `Order updated, but your Purchases log couldn't be: ${describeError(e)}`, error: true });
       }
     } catch (e) {
       setError(describeError(e));
+    } finally {
+      setSaving(false);
     }
   }
 
   return (
-    <Modal title={`Split: ${lineName(line)}`} onClose={onClose}>
-      <div className="split-chips">
-        {names.map((who) => (
-          <span key={who} className={`split-chip${isMe(who) ? " me" : ""}`}>
-            <b>{who}</b>
-            <button type="button" disabled={(split[who] ?? 0) <= 0} onClick={() => setSplit({ ...split, [who]: (split[who] ?? 0) - 1 })} aria-label={`One fewer for ${who}`}>−</button>
-            <span>{split[who] ?? 0}</span>
-            <button type="button" onClick={() => setSplit({ ...split, [who]: (split[who] ?? 0) + 1 })} aria-label={`One more for ${who}`}>+</button>
-          </span>
-        ))}
+    <Modal title="Edit order" onClose={onClose}>
+      <div className="eo-fields">
+        <label className="wide">Name<input value={name} placeholder="e.g. Burgundy 2024 release" onChange={(e) => setName(e.target.value)} /></label>
+        <label>From<input value={merchant} onChange={(e) => setMerchant(e.target.value)} /></label>
+        <label>Ordered<input type="date" value={date} max={todayIso()} onChange={(e) => setDate(e.target.value)} /></label>
       </div>
-      <div className="split-new">
-        <input value={name} placeholder="Add a person" onChange={(e) => setName(e.target.value)} />
-        <button
-          type="button"
-          className="small"
-          disabled={!name.trim() || isMe(name) || names.some((n) => n.toLowerCase() === name.trim().toLowerCase())}
-          onClick={() => {
-            setSplit({ ...split, [name.trim()]: 1 });
-            setName("");
-          }}
-        >
-          Add
-        </button>
-      </div>
-      <p className="muted small">
-        {total} bottle{total === 1 ? "" : "s"} in all (was {line.bottles}).
-        {(split[ME] ?? 0) !== (start[ME] ?? 0) && ` Your cellar changes by ${(split[ME] ?? 0) - (start[ME] ?? 0) > 0 ? "+" : ""}${(split[ME] ?? 0) - (start[ME] ?? 0)}.`}
-      </p>
+      <datalist id="eo-people">{known.map((k) => <option key={k} value={k} />)}</datalist>
+      {order.lines.map((line, i) => {
+        const split = splits[i];
+        const names = [ME, ...Object.keys(split).filter((k) => !isMe(k))];
+        const delta = (split[ME] ?? 0) - (starts[i][ME] ?? 0);
+        const total = sum(split);
+        return (
+          <div key={line.line} className="eo-wine">
+            <div className="eo-wine-head">
+              <span>{lineName(line)}</span>
+              <label className="eo-price">
+                S$
+                <input value={prices[i]} inputMode="decimal" aria-label={`Price per bottle of ${lineName(line)}`} onChange={(e) => setPrices((ps) => ps.map((x, k) => (k === i ? e.target.value : x)))} />
+              </label>
+            </div>
+            <div className="split-chips">
+              {names.map((who) => (
+                <span key={who} className={`split-chip${isMe(who) ? " me" : ""}`}>
+                  <b>{who}</b>
+                  <button type="button" disabled={(split[who] ?? 0) <= 0} onClick={() => bump(i, who, -1)} aria-label={`One fewer for ${who}`}>−</button>
+                  <span>{split[who] ?? 0}</span>
+                  <button type="button" onClick={() => bump(i, who, 1)} aria-label={`One more for ${who}`}>+</button>
+                </span>
+              ))}
+              {adding?.i !== i && (
+                <button type="button" className="split-chip" onClick={() => setAdding({ i, who: "" })}>+ Person</button>
+              )}
+            </div>
+            {adding?.i === i && (
+              <div className="split-new">
+                <input value={adding.who} autoFocus list="eo-people" placeholder="Name" onChange={(e) => setAdding({ i, who: e.target.value })} />
+                <button
+                  type="button"
+                  className="small"
+                  disabled={!adding.who.trim() || isMe(adding.who) || names.some((n) => personKey(n) === personKey(adding.who))}
+                  onClick={() => {
+                    const who = known.find((k) => personKey(k) === personKey(adding.who)) ?? adding.who.trim();
+                    setSplits((ss) => ss.map((s, k) => (k === i ? { ...s, [who]: 1 } : s)));
+                    setAdding(null);
+                  }}
+                >
+                  Add
+                </button>
+                <button type="button" className="link" onClick={() => setAdding(null)}>Cancel</button>
+              </div>
+            )}
+            <p className="muted small">
+              {total} bottle{total === 1 ? "" : "s"}{total !== line.bottles && ` (was ${line.bottles})`}
+              {delta !== 0 && ` · your cellar ${delta > 0 ? "+" : ""}${delta}`}
+            </p>
+          </div>
+        );
+      })}
       {error && <p className="form-errors">{error}</p>}
       <div className="actions">
-        <button className="primary" disabled={busy} onClick={() => void save()}>{busy ? "Saving…" : "Save split"}</button>
+        <button className="primary" disabled={saving} onClick={() => void save()}>{saving ? "Saving…" : "Save"}</button>
+        <button className="link" disabled={saving} onClick={onClose}>Cancel</button>
+        <span className="muted small" style={{ marginLeft: "auto" }}>Me {myTotal} · friends {friendTotal}</span>
       </div>
     </Modal>
   );
