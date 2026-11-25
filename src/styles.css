@@ -1203,3 +1203,28 @@ body.reading .winelist { border-color: transparent; }
 .eo-wine .muted.small { margin: 4px 0 0; }
 .ws-tag.ws-where { color: var(--accent); text-decoration: none; }
 a.ws-tag.ws-where:hover { text-decoration: underline; }
+
+/* Header sync dot */
+.sync-dot { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font: inherit; font-size: 0.8rem; color: var(--muted); background: none; border: none; padding: 4px 6px; cursor: default; white-space: nowrap; }
+.sync-dot::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: #3f9b5a; flex: none; }
+.sync-dot.busy::before { background: #d39b2a; }
+.sync-dot.offline::before { background: #8a8580; }
+.sync-dot.failed::before { background: #c0503f; }
+.sync-dot.offline, .sync-dot.failed { cursor: pointer; color: var(--text); }
+
+/* Wine page: actions kept at the bottom of the screen */
+main:has(.wine-bar) { padding-bottom: 76px; }
+.wine-bar { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(12px + env(safe-area-inset-bottom)); width: min(640px, calc(100% - 24px)); z-index: 20;
+  display: flex; gap: 8px; padding: 8px; border-radius: 16px; background: var(--surface); border: 1px solid var(--border); box-shadow: 0 6px 20px rgba(0,0,0,0.18); }
+.wine-bar > button, .wine-bar .more-wrap > button { flex: 1; white-space: nowrap; }
+.wine-bar > button.primary { flex: 1.4; }
+.wine-bar .more-wrap { position: relative; flex: 0.8; display: flex; }
+.more-menu { position: absolute; right: 0; bottom: calc(100% + 8px); min-width: 11rem; display: flex; flex-direction: column; padding: 4px; border-radius: 12px; background: var(--surface); border: 1px solid var(--border); box-shadow: 0 6px 20px rgba(0,0,0,0.2); }
+.more-menu button { text-align: left; border: none; background: none; padding: 9px 12px; border-radius: 8px; }
+.more-menu button:hover:not(:disabled) { background: var(--chip); }
+
+/* Easier-to-read labels: normal case, a little larger, brighter than the muted gold. */
+.gb-count i { text-transform: none; letter-spacing: normal; font-size: 0.72rem; color: var(--text); opacity: 0.85; }
+.note-section h3, .st-review h3, .set-group { text-transform: none; letter-spacing: normal; font-size: 0.95rem; }
+.spot-sub, .where h3, .move-to, .fam-group, .st-group h3, .st-group summary { text-transform: none; letter-spacing: normal; font-size: 0.85rem; color: var(--text); opacity: 0.85; }
+.cmp-pick-text small { text-transform: none; letter-spacing: normal; font-size: 0.75rem; }

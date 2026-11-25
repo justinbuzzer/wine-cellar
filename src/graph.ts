@@ -9,6 +9,7 @@ import { getToken } from "./auth";
 import { config } from "./config";
 import type { Cell } from "./data";
 import { parseAddress, type TableAddress } from "./sheet";
+import { sessionEnded, sessionStarted } from "./syncstatus";
 
 const GRAPH = "https://graph.microsoft.com/v1.0";
 
@@ -337,10 +338,16 @@ export class Workbook {
 
 /** Run writes inside a workbook session that is always closed afterwards. */
 export async function withSession<T>(itemId: string, fn: (wb: Workbook) => Promise<T>): Promise<T> {
-  const wb = await Workbook.openSession(itemId);
+  // The header's sync dot shows "Syncing…" while any session runs.
+  sessionStarted();
   try {
-    return await fn(wb);
+    const wb = await Workbook.openSession(itemId);
+    try {
+      return await fn(wb);
+    } finally {
+      await wb.close();
+    }
   } finally {
-    await wb.close();
+    sessionEnded();
   }
 }

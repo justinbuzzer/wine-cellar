@@ -28,6 +28,7 @@ import Storage from "./views/Storage";
 import GroupBuys from "./views/GroupBuys";
 import { LogoProvider } from "./logos";
 import { BRAND, BrandLogo } from "./brand";
+import { retrySync, useSyncStatus } from "./syncstatus";
 
 export default function App({ account }: { account: AccountInfo | null }) {
   if (!account) {
@@ -122,6 +123,26 @@ function TabIcon({ path }: { path: string }) {
   );
 }
 
+/** Saved / Syncing… / Offline, top right. Offline or not updated: tap to try again. */
+function SyncDot() {
+  const { view, active } = useSyncStatus();
+  const k = view.state === "offline" ? "offline" : view.state === "failed" ? "failed" : view.state === "updating" || active > 0 ? "busy" : "ok";
+  const at = view.savedAt ? new Date(view.savedAt).toLocaleString("en-SG", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }) : "";
+  const label = { ok: "Saved", busy: "Syncing…", offline: "Offline", failed: "Not updated" }[k];
+  const title = {
+    ok: "Up to date with OneDrive",
+    busy: "Reading or saving your workbook…",
+    offline: `Offline: showing your cellar as saved on this device at ${at}. Changes need a connection. Tap to try again.`,
+    failed: `Couldn't update from OneDrive (${view.message ?? "unknown error"}). Showing the copy saved at ${at}. Tap to try again.`,
+  }[k];
+  const tappable = k === "offline" || k === "failed";
+  return (
+    <button type="button" className={`sync-dot ${k}`} title={title} aria-label={title} aria-live="polite" onClick={tappable ? retrySync : undefined} tabIndex={tappable ? 0 : -1}>
+      {label}
+    </button>
+  );
+}
+
 function Shell({ tabs, children }: { tabs?: boolean; children: ReactNode }) {
   const route = useRoute();
   const section =
@@ -168,7 +189,7 @@ function Shell({ tabs, children }: { tabs?: boolean; children: ReactNode }) {
             ))}
           </nav>
         )}
-
+        {tabs && <SyncDot />}
       </header>
       <main>{children}</main>
       {tabs && isListPage && <BackToTop />}

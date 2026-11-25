@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { msal, OfflineError } from "./auth";
 import { isOfflineError, loadSnapshot, requestPersistentStorage, saveSnapshot } from "./offline";
+import { setSyncView } from "./syncstatus";
 import { config } from "./config";
 import {
   checkSchema,
@@ -206,6 +207,9 @@ function snapshotKey(): string {
 export function WorkbookGate({ children }: { children: ReactNode }) {
   const [phase, setPhase] = useState<Phase>({ kind: "finding" });
   const [sync, setSync] = useState<Sync>({ state: "fresh" });
+  // The header's sync dot follows this; tapping it when offline tries again.
+  const refreshRef = useRef<() => Promise<void>>(async () => {});
+  useEffect(() => setSyncView(sync, () => void refreshRef.current()), [sync]);
   const cachedAt = useRef<number | null>(null);
   const [syncedAt, setSyncedAt] = useState<number | null>(null);
   const key = snapshotKey();
@@ -416,36 +420,11 @@ export function WorkbookGate({ children }: { children: ReactNode }) {
       void search();
     },
   };
+  refreshRef.current = refresh;
   return (
     <StoreContext.Provider value={store}>
-      <SyncNotice sync={sync} onRetry={() => void refresh()} />
       {children}
     </StoreContext.Provider>
-  );
-}
-
-function savedTime(ms: number): string {
-  return new Date(ms).toLocaleString("en-SG", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" });
-}
-
-function SyncNotice({ sync, onRetry }: { sync: Sync; onRetry: () => void }) {
-  if (sync.state === "fresh") return null;
-  if (sync.state === "updating") return <div className="sync-note muted small">Updating from OneDrive…</div>;
-  return (
-    <div className="notice sync-offline">
-      {sync.state === "offline" ? (
-        <>
-          <strong>Offline.</strong> Showing your cellar as saved on this device at {savedTime(sync.savedAt)}. Changes need a
-          connection.
-        </>
-      ) : (
-        <>
-          <strong>Couldn't update from OneDrive.</strong> Showing the copy saved at {savedTime(sync.savedAt)}. It will
-          try again automatically. <span className="muted small">{sync.message}</span>
-        </>
-      )}{" "}
-      <button className="link" onClick={onRetry}>Try again</button>
-    </div>
   );
 }
 

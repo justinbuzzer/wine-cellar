@@ -59,6 +59,7 @@ export default function WineDetail({ id }: { id: string }) {
   const resolveSpot = useResolveSpot();
   const [busy, setBusy] = useState(false);
   const [dialog, setDialog] = useState<Dialog>(null);
+  const [more, setMore] = useState(false);
   /** The Move sheet: from a particular spot, or (empty) let it choose. */
   const [moving, setMoving] = useState<{ from?: { loc: Location; spot: string | null }; place?: boolean } | null>(null);
   const [justOpened, setJustOpened] = useState(false);
@@ -300,23 +301,26 @@ export default function WineDetail({ id }: { id: string }) {
             ))}
           </div>
         )}
-        <div className="actions">
-          {/* Bottles that haven't arrived can be sold, but not drunk. */}
-          <button
-            className="primary"
-            disabled={!hasLocations || busy || stocked.length === 0 || wine.status === "NYA"}
-            title={wine.status === "NYA" ? "Not arrived yet: mark it arrived first" : undefined}
-            onClick={() => setDialog("open")}
-          >
-            🍷 Open a bottle
-          </button>
-          <button disabled={!hasLocations || busy} onClick={() => setDialog("add")}>+ Add bottles</button>
-          <button disabled={!hasLocations || busy || stocked.length === 0} onClick={() => setDialog("remove")}>− Remove</button>
-          <button disabled={!hasLocations || busy || stocked.length === 0} onClick={() => setMoving({})}>⇄ Move</button>
-          <button disabled={!hasLocations || busy || stocked.length === 0} onClick={() => setDialog("sell")}>💰 Sell</button>
-          {wine.status === "NYA" && (
-            <button disabled={busy} onClick={() => setDialog("arrived")}>✓ Mark arrived</button>
+        {/* Kept at the bottom of the screen: the main action, Sell, and the rest under More. */}
+        <div className="wine-bar">
+          {/* Bottles that haven't arrived can be sold, but not drunk: Mark arrived takes Open's place. */}
+          {wine.status === "NYA" ? (
+            <button className="primary" disabled={busy} onClick={() => setDialog("arrived")}>✓ Mark arrived</button>
+          ) : (
+            <button className="primary" disabled={!hasLocations || busy || stocked.length === 0} onClick={() => setDialog("open")}>🍷 Open a bottle</button>
           )}
+          <button disabled={!hasLocations || busy || stocked.length === 0} onClick={() => setDialog("sell")}>💰 Sell</button>
+          <div className="more-wrap">
+            <button aria-expanded={more} aria-haspopup="menu" onClick={() => setMore((m) => !m)}>⋯ More</button>
+            {more && (
+              <div className="more-menu" role="menu" onClick={() => setMore(false)}>
+                <button role="menuitem" disabled={!hasLocations || busy} onClick={() => setDialog("add")}>+ Add bottles</button>
+                <button role="menuitem" disabled={!hasLocations || busy || stocked.length === 0} onClick={() => setDialog("remove")}>− Remove</button>
+                <button role="menuitem" disabled={!hasLocations || busy || stocked.length === 0} onClick={() => setMoving({})}>⇄ Move</button>
+                <button role="menuitem" onClick={() => go(`edit/${id}`)}>✎ Edit details</button>
+              </div>
+            )}
+          </div>
         </div>
       </section>
 
