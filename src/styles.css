@@ -1228,3 +1228,5 @@ main:has(.wine-bar) { padding-bottom: 76px; }
 .note-section h3, .st-review h3, .set-group { text-transform: none; letter-spacing: normal; font-size: 0.95rem; }
 .spot-sub, .where h3, .move-to, .fam-group, .st-group h3, .st-group summary { text-transform: none; letter-spacing: normal; font-size: 0.85rem; color: var(--text); opacity: 0.85; }
 .cmp-pick-text small { text-transform: none; letter-spacing: normal; font-size: 0.75rem; }
+/* Phones: the tab dock floats at the bottom, so the wine page bar sits just above it. */
+@media (max-width: 720px) { .wine-bar { bottom: calc(var(--dock-space) + 2px); } }
