@@ -8,10 +8,14 @@ import { ProducerLogo } from "../logos";
 import { parseNote } from "../notesmodel";
 import { useWorkbook } from "../store";
 import { notesForWine } from "../winenotes";
-import { locationLine } from "./Cellar";
+import { LOCATIONS } from "../locations";
+import { placementOf } from "../spots";
+import { isNya } from "../stocktakemodel";
+import { spotHref } from "./Storage";
 import { formatDay } from "./WineDetail";
 
-export default function WineSheet({ wine, onClose }: { wine: Wine; onClose: () => void }) {
+/** `showWhere`: also show which box or rack the bottles are in (not in full screen, which is for showing others). */
+export default function WineSheet({ wine, onClose, showWhere = false }: { wine: Wine; onClose: () => void; showWhere?: boolean }) {
   const { data } = useWorkbook();
   const notes = useMemo(() => notesForWine(wine, data.tastings), [wine, data.tastings]);
   const sheet = useRef<HTMLDivElement>(null);
@@ -34,6 +38,10 @@ export default function WineSheet({ wine, onClose }: { wine: Wine; onClose: () =
     ["Blend", wine.blend],
   ];
   const shown = facts.filter(([, v]) => v);
+  const bottlesHeld = LOCATIONS.reduce((s, loc) => {
+    const p = placementOf(wine, loc);
+    return s + p.unplaced + p.spots.reduce((a, x) => a + x.n, 0);
+  }, 0);
 
   return (
     <div className="modal-backdrop sheet-backdrop" onClick={onClose}>
@@ -74,7 +82,33 @@ export default function WineSheet({ wine, onClose }: { wine: Wine; onClose: () =
 
         <div className="ws-tags">
           {wine.type && <span className="ws-tag">{wine.type}</span>}
-          <span className="ws-tag">{locationLine(wine)}</span>
+          {/* The where tags carry the counts; in full screen (for showing others) just the number of bottles. */}
+          {!showWhere && bottlesHeld > 0 && <span className="ws-tag">{bottlesHeld} bottle{bottlesHeld === 1 ? "" : "s"}</span>}
+          {showWhere &&
+            (isNya(wine) ? (
+              <span className="ws-tag ws-where">🚚 Not arrived yet{bottlesHeld ? ` ×${bottlesHeld}` : ""}</span>
+            ) : (
+              LOCATIONS.flatMap((loc) => {
+                const p = placementOf(wine, loc);
+                const icon = loc === "Home" ? "🏠" : "📦";
+                // "K Cellars A2 ×2" (a K Cellars box is just a letter and number); home racks are named already.
+                const label = (spot: string) => (loc === "Home" ? spot : `${loc} ${spot}`);
+                return [
+                  ...p.spots.map((s) => (
+                    <a key={`${loc}-${s.spot}`} className="ws-tag ws-where" href={spotHref(loc, s.spot)} title={`Open ${label(s.spot)}`}>
+                      {icon} {label(s.spot)} ×{s.n}
+                    </a>
+                  )),
+                  ...(p.unplaced > 0
+                    ? [
+                        <a key={`${loc}-none`} className="ws-tag ws-where" href={spotHref(loc, null)} title={`Bottles at ${loc} not in a box or rack yet`}>
+                          {icon} {loc} ×{p.unplaced} not placed
+                        </a>,
+                      ]
+                    : []),
+                ];
+              })
+            ))}
         </div>
 
         {(shown.length > 0 || wine.remarks) && (

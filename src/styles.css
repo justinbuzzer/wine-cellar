@@ -1201,3 +1201,5 @@ body.reading .winelist { border-color: transparent; }
 .eo-price input { width: 6rem; text-align: right; }
 .eo-wine .split-new { margin-top: 6px; }
 .eo-wine .muted.small { margin: 4px 0 0; }
+.ws-tag.ws-where { color: var(--accent); text-decoration: none; }
+a.ws-tag.ws-where:hover { text-decoration: underline; }
