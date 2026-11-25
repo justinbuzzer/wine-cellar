@@ -167,7 +167,7 @@ export default function WineList() {
           </svg>
         </button>
       )}
-      {open && <WineSheet wine={open} onClose={close} showWhere={!full} />}
+      {open && <WineSheet wine={open} onClose={close} linkWhere={!full} />}
     </>
   );
 }

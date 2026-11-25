@@ -14,8 +14,8 @@ import { isNya } from "../stocktakemodel";
 import { spotHref } from "./Storage";
 import { formatDay } from "./WineDetail";
 
-/** `showWhere`: also show which box or rack the bottles are in (not in full screen, which is for showing others). */
-export default function WineSheet({ wine, onClose, showWhere = false }: { wine: Wine; onClose: () => void; showWhere?: boolean }) {
+/** `linkWhere`: the box and rack tags open that box (off in full screen, so tapping one doesn't leave it). */
+export default function WineSheet({ wine, onClose, linkWhere = false }: { wine: Wine; onClose: () => void; linkWhere?: boolean }) {
   const { data } = useWorkbook();
   const notes = useMemo(() => notesForWine(wine, data.tastings), [wine, data.tastings]);
   const sheet = useRef<HTMLDivElement>(null);
@@ -82,33 +82,27 @@ export default function WineSheet({ wine, onClose, showWhere = false }: { wine: 
 
         <div className="ws-tags">
           {wine.type && <span className="ws-tag">{wine.type}</span>}
-          {/* The where tags carry the counts; in full screen (for showing others) just the number of bottles. */}
-          {!showWhere && bottlesHeld > 0 && <span className="ws-tag">{bottlesHeld} bottle{bottlesHeld === 1 ? "" : "s"}</span>}
-          {showWhere &&
-            (isNya(wine) ? (
-              <span className="ws-tag ws-where">🚚 Not arrived yet{bottlesHeld ? ` ×${bottlesHeld}` : ""}</span>
-            ) : (
-              LOCATIONS.flatMap((loc) => {
-                const p = placementOf(wine, loc);
-                const icon = loc === "Home" ? "🏠" : "📦";
-                // "K Cellars A2 ×2" (a K Cellars box is just a letter and number); home racks are named already.
-                const label = (spot: string) => (loc === "Home" ? spot : `${loc} ${spot}`);
-                return [
-                  ...p.spots.map((s) => (
-                    <a key={`${loc}-${s.spot}`} className="ws-tag ws-where" href={spotHref(loc, s.spot)} title={`Open ${label(s.spot)}`}>
-                      {icon} {label(s.spot)} ×{s.n}
-                    </a>
-                  )),
-                  ...(p.unplaced > 0
-                    ? [
-                        <a key={`${loc}-none`} className="ws-tag ws-where" href={spotHref(loc, null)} title={`Bottles at ${loc} not in a box or rack yet`}>
-                          {icon} {loc} ×{p.unplaced} not placed
-                        </a>,
-                      ]
-                    : []),
-                ];
-              })
-            ))}
+          {/* Where the bottles are, with their counts. Tapping one opens that box, except in full screen (it would leave it). */}
+          {isNya(wine) ? (
+            <span className="ws-tag ws-where">🚚 Not arrived yet{bottlesHeld ? ` ×${bottlesHeld}` : ""}</span>
+          ) : (
+            LOCATIONS.flatMap((loc) => {
+              const p = placementOf(wine, loc);
+              const icon = loc === "Home" ? "🏠" : "📦";
+              // "K Cellars A2 ×2" (a K Cellars box is just a letter and number); home racks are named already.
+              const label = (spot: string) => (loc === "Home" ? spot : `${loc} ${spot}`);
+              const tag = (key: string, spot: string | null, title: string, text: string) =>
+                linkWhere ? (
+                  <a key={key} className="ws-tag ws-where" href={spotHref(loc, spot)} title={title}>{text}</a>
+                ) : (
+                  <span key={key} className="ws-tag ws-where">{text}</span>
+                );
+              return [
+                ...p.spots.map((s) => tag(`${loc}-${s.spot}`, s.spot, `Open ${label(s.spot)}`, `${icon} ${label(s.spot)} ×${s.n}`)),
+                ...(p.unplaced > 0 ? [tag(`${loc}-none`, null, `Bottles at ${loc} not in a box or rack yet`, `${icon} ${loc} ×${p.unplaced} not placed`)] : []),
+              ];
+            })
+          )}
         </div>
 
         {(shown.length > 0 || wine.remarks) && (
