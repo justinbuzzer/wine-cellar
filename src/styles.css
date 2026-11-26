@@ -1282,3 +1282,20 @@ main:has(.wine-bar) { padding-bottom: 76px; }
 .guess-mark.wrong { color: #c0503f; }
 .guess-mark.none { color: var(--muted); }
 .guess-total { margin: 6px 0 0; }
+
+/* Blind tab */
+.bl-sub { margin: -4px 0 10px; }
+.bl-tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-bottom: 12px; }
+.bl-tile { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 8px 6px; text-align: center; display: grid; gap: 1px; }
+.bl-tile b { font-size: 1.3rem; color: var(--accent); }
+.bl-tile span { font-size: 0.8rem; font-weight: 600; }
+.bl-tile small { font-size: 0.72rem; }
+.blind-page .card h3 { margin: 0 0 6px; font-size: 0.95rem; color: var(--accent); }
+.blind-page .card h3.bl-h { margin-top: 12px; }
+.bl-row { display: grid; grid-template-columns: minmax(0, 7.5rem) 1fr 2.8rem; gap: 8px; align-items: center; padding: 4px 0; }
+.bl-num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.bl-bar { height: 8px; border-radius: 4px; background: var(--chip); overflow: hidden; display: block; }
+.bl-bar i { display: block; height: 100%; border-radius: 4px; background: var(--gold, var(--accent)); }
+.bl-line { display: flex; justify-content: space-between; gap: 10px; padding: 6px 0; border-top: 1px solid var(--border); }
+.bl-link { color: inherit; text-decoration: none; }
+.bl-text { margin: 0; }

@@ -26,6 +26,7 @@ import Stocktake from "./views/Stocktake";
 import Settings from "./views/Settings";
 import Storage from "./views/Storage";
 import GroupBuys from "./views/GroupBuys";
+import Blind from "./views/Blind";
 import { LogoProvider } from "./logos";
 import { BRAND, BrandLogo } from "./brand";
 import { retrySync, useSyncStatus } from "./syncstatus";
@@ -71,6 +72,7 @@ const TABS = [
   { path: "overview", label: "Overview" },
   { path: "list", label: "Wine list" },
   { path: "groupbuys", label: "Group Buys" },
+  { path: "blind", label: "Blind" },
   { path: "settings", label: "Settings" },
 ];
 
@@ -119,6 +121,13 @@ function TabIcon({ path }: { path: string }) {
           <path d="M16.2 14.6c2.7.1 4.4 1.9 4.8 5.4" />
         </g>
       )}
+      {path === "blind" && (
+        <g {...p}>
+          <circle cx="6.8" cy="14" r="3.6" />
+          <circle cx="17.2" cy="14" r="3.6" />
+          <path d="M10.4 13.6c1-.7 2.2-.7 3.2 0M3.2 13l1.6-6.2h2.4M20.8 13l-1.6-6.2h-2.4" />
+        </g>
+      )}
     </svg>
   );
 }
@@ -156,7 +165,7 @@ function Shell({ tabs, children }: { tabs?: boolean; children: ReactNode }) {
             ? "list"
             : route[0];
   const page = route[0] ?? "cellar";
-  const isListPage = page === "cellar" || page === "list" || page === "notes" || page === "overview" || page === "history" || page === "producers" || page === "sales" || page === "groupbuys";
+  const isListPage = page === "cellar" || page === "list" || page === "notes" || page === "overview" || page === "history" || page === "producers" || page === "sales" || page === "groupbuys" || page === "blind";
   return (
     <div className="app">
       <header className="topbar">
@@ -230,6 +239,8 @@ function Routes() {
       return <WineForm key="add" />;
     case "purchase":
       return <PurchaseForm key={arg ?? "purchase"} startGroup={arg === "group"} />;
+    case "blind":
+      return <Blind />;
     case "groupbuys":
       return <GroupBuys key={`${arg ?? ""}-${sub ?? ""}`} view={arg} arg={sub} />;
     case "sell":
