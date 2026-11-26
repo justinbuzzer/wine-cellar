@@ -1262,3 +1262,9 @@ main:has(.wine-bar) { padding-bottom: 76px; }
 .note-section .suggestions { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin-top: 6px; padding-bottom: 2px; }
 .note-section .suggestions::-webkit-scrollbar { display: none; }
 .note-section .suggestion { flex: none; }
+
+/* Note form: label photo icons beside the wine search */
+.search-row { display: flex; gap: 6px; align-items: center; }
+.search-row .search { flex: 1; min-width: 0; }
+.label-icon { flex: none; width: 42px; height: 42px; padding: 0; font-size: 1.15rem; line-height: 1; display: inline-flex; align-items: center; justify-content: center; }
+.label-fill:has(> .wine-picker) { display: grid; gap: 10px; }

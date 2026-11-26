@@ -291,13 +291,16 @@ export default function NoteForm({ editId, wineId, fromId, draftId }: { editId?:
         <Section title="Wine">
           {!hasWine && !isEdit ? (
             <>
-              <WinePicker onPick={pickWine} />
-              {labelReaderOn() && (
+              {/* The label photo buttons sit beside the search box, as icons. */}
+              {labelReaderOn() ? (
                 <LabelFill
                   onApply={applyLabel}
                   onPick={(w) => pickFromLabel(w as Partial<WineFields>)}
                   onDraftEach={isEdit ? undefined : (b) => void draftEach(b)}
+                  searchBar={(buttons) => <WinePicker onPick={pickWine} beside={buttons} />}
                 />
+              ) : (
+                <WinePicker onPick={pickWine} />
               )}
             </>
           ) : (
@@ -358,8 +361,8 @@ export default function NoteForm({ editId, wineId, fromId, draftId }: { editId?:
         <Section title="Appearance">
           {!f.type && (
             <Label text="Type">
+              {/* Picked first when the wine isn't known (blind tastings): colours, aromas and tannin follow it. */}
               <ChipGroup label="Type" options={data.lists["List_Type"] ?? []} value={f.type} onChange={(v) => set("type", v)} />
-              <p className="muted small">Pick it first: the colours, aromas and tannin follow it.</p>
             </Label>
           )}
           <Label text="Colour">
@@ -542,7 +545,7 @@ interface PickResult {
   detail: string;
 }
 
-function WinePicker({ onPick }: { onPick: (w: Partial<WineFields>) => void }) {
+function WinePicker({ onPick, beside }: { onPick: (w: Partial<WineFields>) => void; beside?: ReactNode }) {
   const { data } = useWorkbook();
   const [q, setQ] = useState("");
 
@@ -592,14 +595,17 @@ function WinePicker({ onPick }: { onPick: (w: Partial<WineFields>) => void }) {
 
   return (
     <div className="wine-picker">
-      <input
-        className="search"
-        type="search"
-        value={q}
-        autoFocus
-        placeholder="Search your cellar and past notes…"
-        onChange={(e) => setQ(e.target.value)}
-      />
+      <div className="search-row">
+        <input
+          className="search"
+          type="search"
+          value={q}
+          autoFocus
+          placeholder="Search your cellar and past notes…"
+          onChange={(e) => setQ(e.target.value)}
+        />
+        {beside}
+      </div>
       {tokens.length > 0 && (
         <div className="choice-list">
           {results.map((r) => (

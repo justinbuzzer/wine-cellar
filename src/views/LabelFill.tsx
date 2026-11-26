@@ -43,6 +43,7 @@ export default function LabelFill({
   onDraftEach,
   onBottles,
   compact,
+  searchBar,
   children,
 }: {
   onApply?: (a: LabelApply) => void;
@@ -55,6 +56,8 @@ export default function LabelFill({
   compact?: boolean;
   /** Extra options shown with the buttons (e.g. replace or keep the wine details). */
   children?: ReactNode;
+  /** A search box to put the photo buttons beside (as icons), instead of showing them on their own. */
+  searchBar?: (buttons: ReactNode) => ReactNode;
 }) {
   const { data } = useWorkbook();
   const input = useRef<HTMLInputElement>(null);
@@ -221,10 +224,18 @@ export default function LabelFill({
     );
   }
 
+  const iconButtons = (
+    <>
+      <button type="button" className="label-icon" aria-label="Take a photo of the label" title="Take a photo of the label" onClick={() => camera.current?.click()}>📷</button>
+      <button type="button" className="label-icon" aria-label="Choose label photos" title="Choose label photos" onClick={() => input.current?.click()}>🖼️</button>
+    </>
+  );
+
   return (
     <div className="label-fill">
       {pickers}
-      {photos.length === 0 && (compact || onBottles) ? (
+      {searchBar?.(iconButtons)}
+      {photos.length === 0 && searchBar ? null : photos.length === 0 && (compact || onBottles) ? (
         <div className="label-compact">
           <div className="actions">
             {!onBottles && <span className="muted small">Label to hand?</span>}
@@ -235,7 +246,6 @@ export default function LabelFill({
         </div>
       ) : photos.length === 0 ? (
         <>
-          <p className="or">or fill from the label</p>
           <div className="actions label-buttons">
             <button type="button" className="primary label-button" onClick={() => camera.current?.click()}>
               📷 Take photo
@@ -244,7 +254,6 @@ export default function LabelFill({
               🖼️ Choose photos
             </button>
           </div>
-          <p className="muted small">One bottle or a line-up. For one bottle, add the back label too: it often has the alcohol and grapes.</p>
         </>
       ) : (
         <>
