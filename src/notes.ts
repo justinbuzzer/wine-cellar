@@ -5,7 +5,8 @@ import { config } from "./config";
 import { recordFrom, toTasting, type Cell, type Tasting } from "./data";
 import { withSession } from "./graph";
 import { AGE_FORMULA } from "./notesmodel";
-import { appendRow, locateById, nextId, setCells } from "./tableops";
+import { appendRow, ensureColumns, fillsAny, locateById, nextId, setCells } from "./tableops";
+import { BLIND_COLUMNS } from "./blindmodel";
 
 const TABLE = config.tables.tastings;
 
@@ -22,7 +23,9 @@ const PROTECTED = new Set(["TastingID", "Age Tasted"]);
 
 export function addTasting(itemId: string, fields: Record<string, Cell>): Promise<Tasting> {
   return withSession(itemId, async (wb) => {
-    const snap = await wb.readTable(TABLE);
+    let snap = await wb.readTable(TABLE);
+    // A blind tasting's flag and guesses need their columns (added the first time).
+    if (fillsAny(fields, BLIND_COLUMNS)) snap = await ensureColumns(wb, TABLE, snap, BLIND_COLUMNS);
     const tastingId = nextId(snap, "TastingID", "T", 5);
     const values = Object.fromEntries(Object.entries(fields).filter(([h]) => !PROTECTED.has(h)));
     values["TastingID"] = tastingId;
@@ -34,8 +37,11 @@ export function addTasting(itemId: string, fields: Record<string, Cell>): Promis
 
 export function updateTasting(itemId: string, tastingId: string, changes: Record<string, Cell>): Promise<Tasting> {
   return withSession(itemId, async (wb) => {
-    const at = locateById(await wb.readTable(TABLE), "TastingID", tastingId, "Tasting note");
-    const allowed = Object.fromEntries(Object.entries(changes).filter(([h]) => !PROTECTED.has(h)));
+    let snap = await wb.readTable(TABLE);
+    if (fillsAny(changes, BLIND_COLUMNS)) snap = await ensureColumns(wb, TABLE, snap, BLIND_COLUMNS);
+    const at = locateById(snap, "TastingID", tastingId, "Tasting note");
+    // Only columns the table has (blank blind columns on a table without them are left out).
+    const allowed = Object.fromEntries(Object.entries(changes).filter(([h]) => !PROTECTED.has(h) && at.headers.includes(h)));
     await setCells(wb, at, allowed);
     return toTasting(withAge(recordFrom(at.headers, at.row)));
   });

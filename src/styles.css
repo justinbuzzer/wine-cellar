@@ -1268,3 +1268,17 @@ main:has(.wine-bar) { padding-bottom: 76px; }
 .search-row .search { flex: 1; min-width: 0; }
 .label-icon { flex: none; width: 42px; height: 42px; padding: 0; font-size: 1.15rem; line-height: 1; display: inline-flex; align-items: center; justify-content: center; }
 .label-fill:has(> .wine-picker) { display: grid; gap: 10px; }
+
+/* Blind guesses */
+.guess-fields { display: grid; gap: 8px; }
+.guess-fields .field { grid-template-columns: 4.4rem minmax(0, 1fr); column-gap: 6px; row-gap: 4px; align-items: center; }
+.guess-fields .field > :not(:first-child) { grid-column: 2; }
+.guess-result { display: grid; }
+.guess-row { display: grid; grid-template-columns: 4rem minmax(0, 1fr) minmax(0, 1fr) 2rem; gap: 6px; padding: 6px 0; border-top: 1px solid var(--border); align-items: baseline; }
+.guess-row.guess-head { border-top: none; padding-top: 0; }
+.guess-mark { text-align: center; font-weight: 700; }
+.guess-mark.right { color: #3f9b5a; }
+.guess-mark.close { color: #d39b2a; }
+.guess-mark.wrong { color: #c0503f; }
+.guess-mark.none { color: var(--muted); }
+.guess-total { margin: 6px 0 0; }

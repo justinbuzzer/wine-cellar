@@ -6,11 +6,12 @@ import { config } from "./config";
 import { TASTING_COLUMNS, toTasting, type Cell, type Tasting } from "./data";
 import { withSession, type TableSnapshot, type Workbook } from "./graph";
 import { appendLog, readLog, removeLog, type LogSpec } from "./logtable";
-import { locateById, setCells } from "./tableops";
+import { ensureColumns, fillsAny, locateById, setCells } from "./tableops";
+import { BLIND_COLUMNS } from "./blindmodel";
 
 const NOTE_COLUMNS = TASTING_COLUMNS.filter((c) => c !== "TastingID" && c !== "Age Tasted");
 
-export const DRAFT_COLUMNS = ["DraftID", "Saved", ...NOTE_COLUMNS] as const;
+export const DRAFT_COLUMNS = ["DraftID", "Saved", ...NOTE_COLUMNS, ...BLIND_COLUMNS] as const;
 
 const SPEC: LogSpec = {
   table: config.tables.drafts,
@@ -63,17 +64,25 @@ export function readDrafts(wb: Workbook): Promise<TableSnapshot | null> {
 function draftCells(fields: Record<string, Cell>): Record<string, Cell> {
   const out: Record<string, Cell> = { Saved: nowSerial() };
   for (const c of NOTE_COLUMNS) out[c] = fields[c] ?? "";
+  for (const c of BLIND_COLUMNS) out[c] = fields[c] ?? "";
   return out;
 }
 
 export function addDraft(itemId: string, fields: Record<string, Cell>): Promise<Draft> {
-  return withSession(itemId, async (wb) => toDraft(await appendLog(wb, SPEC, draftCells(fields))));
+  return withSession(itemId, async (wb) => {
+    const cells = draftCells(fields);
+    // A blind draft's flag and guesses need their columns (added the first time).
+    const snap = fillsAny(cells, BLIND_COLUMNS) ? await readLog(wb, SPEC.table) : null;
+    if (snap) await ensureColumns(wb, SPEC.table, snap, BLIND_COLUMNS);
+    return toDraft(await appendLog(wb, SPEC, cells));
+  });
 }
 
 export function updateDraft(itemId: string, draftId: string, fields: Record<string, Cell>): Promise<Draft> {
   return withSession(itemId, async (wb) => {
-    const snap = await readLog(wb, SPEC.table);
+    let snap = await readLog(wb, SPEC.table);
     if (!snap) throw new Error(`Draft ${draftId} is no longer in the spreadsheet. Reload and try again.`);
+    if (fillsAny(draftCells(fields), BLIND_COLUMNS)) snap = await ensureColumns(wb, SPEC.table, snap, BLIND_COLUMNS);
     const at = locateById(snap, SPEC.idHeader, draftId, "Draft");
     // Only columns the sheet has (someone may have removed one in Excel).
     const cells = Object.fromEntries(Object.entries(draftCells(fields)).filter(([h]) => at.headers.includes(h)));

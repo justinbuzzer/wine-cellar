@@ -8,6 +8,7 @@ import { describeError, useWorkbook } from "../store";
 import { ChipGroup, TagInput, TypeDot, useToast } from "../ui";
 import { labelReaderOn, type LabelResult } from "../label";
 import { isBlindName, nextBlindNumber, revealNote } from "../reveal";
+import GuessResult from "./GuessResult";
 import LabelFill, { type LabelApply } from "./LabelFill";
 import { appellationsOf } from "../appellations";
 import { addDraft, deleteDraft, formatSaved, updateDraft } from "../drafts";
@@ -77,8 +78,8 @@ export default function NoteForm({ editId, wineId, fromId, draftId }: { editId?:
   const baseline = useRef(toCells(initial.state));
   const hasWine = !!f.name;
   /** Tasted blind: the wine is filled in later, from the line-up photo. Saved only as a draft. */
-  const blind = !isEdit && isBlindName(f.name) && !f.producer && !f.wineId;
-  const startBlind = () => setF((p) => ({ ...p, ...wineFields({}), name: `Blind #${nextBlindNumber(data.drafts)}` }));
+  const blind = !isEdit && (f.blind || isBlindName(f.name)) && !f.producer && !f.wineId;
+  const startBlind = () => setF((p) => ({ ...p, ...wineFields({}), name: `Blind #${nextBlindNumber(data.drafts)}`, blind: true }));
   const blindButton = (
     <button type="button" className="label-icon" aria-label="Blind tasting" title="Blind tasting: fill the wine in later, from the line-up photo" onClick={startBlind}>
       🕶️
@@ -144,6 +145,31 @@ export default function NoteForm({ editId, wineId, fromId, draftId }: { editId?:
   const appell = useMemo(() => appellationsOf(data), [data]);
   /** Saved with the appellation in its standard spelling. */
   const cellsOf = (x: NoteState) => toCells({ ...x, location: appell.canonical(x.location) });
+  // Blind guesses: grapes you've used most first, countries, and regions plus appellations.
+  const guessLists = useMemo(() => {
+    const all = [...data.wines, ...data.tastings];
+    const grapes = new Map<string, { label: string; n: number }>();
+    for (const w of all) {
+      for (const g of (w.varietal ?? "").split(/[,;/&+]/)) {
+        const t = g.trim();
+        if (!t) continue;
+        const e = grapes.get(t.toLowerCase()) ?? { label: t, n: 0 };
+        e.n++;
+        grapes.set(t.toLowerCase(), e);
+      }
+    }
+    const u = (xs: (string | null)[]) => [...new Set(xs.filter((x): x is string => !!x))].sort((a, b) => a.localeCompare(b));
+    return {
+      grapes: [...grapes.values()].sort((a, b) => b.n - a.n).map((e) => e.label),
+      countries: u(all.map((w) => w.country)),
+      regions: [...new Set([...u(all.map((w) => w.region)), ...appell.options(all.map((w) => w.location))])].sort((a, b) => a.localeCompare(b)),
+    };
+  }, [data.wines, data.tastings, appell]);
+  const grapeSuggestions = (q: string, ex: string[]) => {
+    const t = q.trim().toLowerCase();
+    const skip = new Set(ex.map((e) => e.toLowerCase()));
+    return guessLists.grapes.filter((g) => !skip.has(g.toLowerCase()) && (!t || g.toLowerCase().includes(t))).slice(0, t ? 10 : 12);
+  };
   const sources = useMemo(
     () => [...new Set(data.tastings.map((t) => t.source).filter((x): x is string => !!x))].sort((a, b) => a.localeCompare(b)),
     [data.tastings],
@@ -349,10 +375,11 @@ export default function NoteForm({ editId, wineId, fromId, draftId }: { editId?:
                     className="link"
                     onClick={() => {
                       setFromLabel(null);
-                      setF((p) => ({ ...p, ...wineFields({}) }));
+                      // A saved blind draft keeps being blind (its wine is filled in by hand); a new note can undo it.
+                      setF((p) => ({ ...p, ...wineFields({}), blind: blind && !draftId ? false : p.blind }));
                     }}
                   >
-                    {blind ? "Not blind" : "Choose a different wine"}
+                    {blind ? (draftId ? "Fill in the wine" : "Not blind") : "Choose a different wine"}
                   </button>
                 )}
               </div>
@@ -483,6 +510,29 @@ export default function NoteForm({ editId, wineId, fromId, draftId }: { editId?:
             <textarea rows={3} value={f.noteFree} onChange={text("noteFree")} placeholder="Anything else worth remembering" />
           </Label>
         </Section>
+
+        {/* ---- Blind guess: filled in while tasting; once the wine is known, marked against it (and no longer editable). ---- */}
+        {(f.blind || blind) && (
+          <Section title="Your guess">
+            {f.producer || f.wineId ? (
+              <GuessResult
+                guess={{ grape: f.guessGrapes.join(", "), country: f.guessCountry, region: f.guessRegion, vintage: f.guessVintage }}
+                wine={{ varietal: f.varietal, country: f.country, region: f.region, location: f.location, vintage: f.vintage }}
+              />
+            ) : (
+              <div className="guess-fields">
+                <Label text="Grape">
+                  <TagInput label="Grape guess" tags={f.guessGrapes} onChange={(t) => set("guessGrapes", t)} placeholder="e.g. Pinot Noir" suggestions={grapeSuggestions} />
+                </Label>
+                <Label text="Country"><input value={f.guessCountry} onChange={text("guessCountry")} list="dl-guess-country" autoComplete="off" /></Label>
+                <Label text="Region"><input value={f.guessRegion} onChange={text("guessRegion")} list="dl-guess-region" autoComplete="off" placeholder="Region or appellation" /></Label>
+                <Label text="Vintage"><input value={f.guessVintage} onChange={text("guessVintage")} inputMode="numeric" placeholder="e.g. 2018 or NV" /></Label>
+                <datalist id="dl-guess-country">{guessLists.countries.map((c) => <option key={c} value={c} />)}</datalist>
+                <datalist id="dl-guess-region">{guessLists.regions.map((c) => <option key={c} value={c} />)}</datalist>
+              </div>
+            )}
+          </Section>
+        )}
 
         {/* ---- Context ---- */}
         <Section title="When & where">

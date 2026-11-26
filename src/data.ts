@@ -2,6 +2,7 @@
 // name, so the order of columns in the spreadsheet never matters.
 
 import { COL_HOME, COL_KC } from "./locations";
+import type { BlindGuess } from "./blindmodel";
 
 export type Cell = string | number | boolean | null;
 
@@ -216,6 +217,10 @@ export interface Tasting {
   yearTasted: number | null;
   ageTasted: number | null;
   dateTasted: string | null;
+  /** Tasted blind (the "Blind" column). */
+  blind: boolean;
+  /** What you guessed when tasting it blind. */
+  guess: BlindGuess | null;
 }
 
 export function toTasting(r: Record<string, Cell>): Tasting {
@@ -252,6 +257,13 @@ export function toTasting(r: Record<string, Cell>): Tasting {
     yearTasted: num(r["Year Tasted"]),
     ageTasted: num(r["Age Tasted"]),
     dateTasted: excelDate(r["Date Tasted"]),
+    blind: /^(yes|y|true|1)$/i.test(String(r["Blind"] ?? "").trim()),
+    guess: {
+      grape: str(r["Guess Grape"] ?? null),
+      country: str(r["Guess Country"] ?? null),
+      region: str(r["Guess Region"] ?? null),
+      vintage: str(r["Guess Vintage"] ?? null),
+    },
   };
 }
 

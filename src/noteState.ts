@@ -40,6 +40,12 @@ export interface NoteState {
   source: string;
   vessel: string;
   viticulture: string;
+  /** Tasted blind: your guesses are kept and marked once the wine is revealed. */
+  blind: boolean;
+  guessGrapes: string[];
+  guessCountry: string;
+  guessRegion: string;
+  guessVintage: string;
 }
 
 const s = (v: string | number | null | undefined) => (v === null || v === undefined ? "" : String(v));
@@ -51,6 +57,7 @@ export const EMPTY: NoteState = {
   palateIntensity: "", dryness: "", acid: "", tannin: "", tanninTags: [], body: "", finish: "",
   score: null, quality: "", ageing: "", noteFree: "",
   date: todayIso(), year: "", source: "", vessel: "", viticulture: "",
+  blind: false, guessGrapes: [], guessCountry: "", guessRegion: "", guessVintage: "",
 };
 
 export type WineFields = Pick<Wine, "wineId" | "producer" | "name" | "vintage" | "type" | "country" | "region" | "location" | "varietal" | "blend" | "alcohol" | "price">;
@@ -81,6 +88,8 @@ export function fromTasting(t: Tasting): NoteState {
     score: t.score, quality: n.quality, ageing: n.ageing, noteFree: n.free,
     date: s(t.dateTasted), year: s(t.yearTasted), source: s(t.source),
     vessel: s(t.vessel), viticulture: s(t.viticulture),
+    blind: t.blind, guessGrapes: splitTerms(t.guess?.grape), guessCountry: s(t.guess?.country),
+    guessRegion: s(t.guess?.region), guessVintage: s(t.guess?.vintage),
   };
 }
 
@@ -120,6 +129,12 @@ export function toCells(f: NoteState): Record<string, Cell> {
     "Date Tasted": f.date ? excelSerial(f.date) : "",
     "Maturing/Fermenting Vessel": f.vessel.trim(),
     "Viniculture/Viticulture": f.viticulture.trim(),
+    // Blind tastings: the flag and your guesses (blank on other notes).
+    Blind: f.blind ? "Yes" : "",
+    "Guess Grape": f.guessGrapes.join(", "),
+    "Guess Country": f.guessCountry.trim(),
+    "Guess Region": f.guessRegion.trim(),
+    "Guess Vintage": /^nv$/i.test(f.guessVintage.trim()) ? "NV" : f.guessVintage.trim(),
   };
 }
 

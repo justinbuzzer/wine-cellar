@@ -4,6 +4,8 @@ import { parseNote } from "../notesmodel";
 import { go, href } from "../router";
 import { useWorkbook } from "../store";
 import { TypeDot } from "../ui";
+import { hasGuess } from "../blindmodel";
+import GuessResult from "./GuessResult";
 import { notesLikeNote } from "../winenotes";
 
 export default function NoteView({ id }: { id: string }) {
@@ -54,6 +56,12 @@ export default function NoteView({ id }: { id: string }) {
         </div>
       </section>
 
+      {t.blind && t.guess && hasGuess(t.guess) && (
+        <section className="card note-section">
+          <h3>Your blind guess</h3>
+          <GuessResult guess={t.guess} wine={t} />
+        </section>
+      )}
       <NoteSection title="Appearance" rows={[["Colour", t.colour]]} />
       <NoteSection title="Nose" rows={[["Intensity", t.noseIntensity], ["Aromas", t.nose]]} />
       <NoteSection

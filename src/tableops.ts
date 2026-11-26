@@ -96,3 +96,18 @@ export async function appendRow(
   }
   return row.map((v, c) => (headers[c] in formulas ? "" : v));
 }
+
+/** Adds any of these columns the table doesn't have yet (blank for existing rows). Returns a fresh read. */
+export async function ensureColumns(wb: Workbook, table: string, snap: TableSnapshot, columns: readonly string[]): Promise<TableSnapshot> {
+  let s = snap;
+  for (const c of columns) {
+    if (headersOf(s.values[0]).includes(c)) continue;
+    await wb.addTableColumn(table, [[c], ...s.values.slice(1).map(() => [""])]);
+    s = await wb.readTable(table);
+  }
+  return s;
+}
+
+/** Whether any of these columns gets a value (so the table needs them). */
+export const fillsAny = (cells: Record<string, Cell>, columns: readonly string[]): boolean =>
+  columns.some((c) => String(cells[c] ?? "").trim() !== "");
