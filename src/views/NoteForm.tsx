@@ -9,6 +9,7 @@ import { ChipGroup, TagInput, TypeDot, useToast } from "../ui";
 import { labelReaderOn, type LabelResult } from "../label";
 import { revealNote } from "../reveal";
 import LabelFill, { type LabelApply } from "./LabelFill";
+import { appellationsOf } from "../appellations";
 import { addDraft, deleteDraft, formatSaved, updateDraft } from "../drafts";
 
 import { EMPTY, fromTasting, toCells, validate, validateDraft, wineFields, type NoteState, type WineFields } from "../noteState";
@@ -132,6 +133,9 @@ export default function NoteForm({ editId, wineId, fromId, draftId }: { editId?:
   const tanninVocab = useMemo(() => buildVocab([], "tanninNature", data.tastings), [data.tastings]);
   const hues = useMemo(() => huesFor(f.type || null, data.tastings), [f.type, data.tastings]);
   const lists = data.lists;
+  const appell = useMemo(() => appellationsOf(data), [data]);
+  /** Saved with the appellation in its standard spelling. */
+  const cellsOf = (x: NoteState) => toCells({ ...x, location: appell.canonical(x.location) });
   const sources = useMemo(
     () => [...new Set(data.tastings.map((t) => t.source).filter((x): x is string => !!x))].sort((a, b) => a.localeCompare(b)),
     [data.tastings],
@@ -158,7 +162,7 @@ export default function NoteForm({ editId, wineId, fromId, draftId }: { editId?:
     }
     setBusy(true);
     try {
-      const saved = draftId ? await updateDraft(data.file.id, draftId, toCells(f)) : await addDraft(data.file.id, toCells(f));
+      const saved = draftId ? await updateDraft(data.file.id, draftId, cellsOf(f)) : await addDraft(data.file.id, cellsOf(f));
       saveLocal(null);
       putDraft(saved);
       toast({ text: draftId ? "Draft updated." : "Saved as a draft. Find it under Drafts on the Notes tab." });
@@ -214,7 +218,7 @@ export default function NoteForm({ editId, wineId, fromId, draftId }: { editId?:
       window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" });
       return;
     }
-    const cells = toCells(f);
+    const cells = cellsOf(f);
     setBusy(true);
     try {
       let saved: Tasting;
@@ -643,11 +647,13 @@ function WineDetails({
   const hl = (k: keyof NoteState) => (filled?.has(k) ? "label-filled" : undefined);
   const u = (xs: (string | null)[]) => [...new Set(xs.filter((x): x is string => !!x))].sort((a, b) => a.localeCompare(b));
   const all = [...data.wines, ...data.tastings];
+  const appell = appellationsOf(data);
   const lists: Record<string, string[]> = {
     producer: u(all.map((w) => w.producer)),
     country: u(all.map((w) => w.country)),
     region: u(all.filter((w) => !f.country || w.country === f.country).map((w) => w.region)),
-    location: u(all.filter((w) => !f.region || w.region === f.region).map((w) => w.location)),
+    // One spelling per appellation (old variants left out).
+    location: appell.options(all.filter((w) => !f.region || w.region === f.region).map((w) => w.location)),
     varietal: u(all.map((w) => w.varietal)),
   };
   return (

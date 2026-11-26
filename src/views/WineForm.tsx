@@ -1,4 +1,5 @@
 import { useMemo, useState, type ReactNode } from "react";
+import { appellationsOf } from "../appellations";
 import { shortName, type Cell, type Tasting, type Wine } from "../data";
 import { labelReaderOn } from "../label";
 import LabelFill, { type LabelApply } from "./LabelFill";
@@ -143,6 +144,7 @@ export default function WineForm({ id }: { id?: string }) {
   };
 
   // Suggestions from what's already in your spreadsheet keep spellings consistent.
+  const appell = useMemo(() => appellationsOf(data), [data]);
   const suggest = useMemo(() => {
     const all = [...data.wines, ...data.tastings];
     const u = (xs: (string | null)[]) => [...new Set(xs.filter((x): x is string => !!x))].sort((a, b) => a.localeCompare(b));
@@ -150,11 +152,12 @@ export default function WineForm({ id }: { id?: string }) {
       producer: u(data.wines.map((w) => w.producer)),
       country: u(all.map((w) => w.country)),
       region: u(all.filter((w) => !f.country || w.country === f.country).map((w) => w.region)),
-      location: u(all.filter((w) => !f.region || w.region === f.region).map((w) => w.location)),
+      // One spelling per appellation (old variants left out).
+      location: appell.options(all.filter((w) => !f.region || w.region === f.region).map((w) => w.location)),
       varietal: u(all.map((w) => w.varietal)),
       source: u(data.wines.map((w) => w.source)),
     };
-  }, [data.wines, data.tastings, f.country, f.region]);
+  }, [data.wines, data.tastings, f.country, f.region, appell]);
 
   // Same producer, name and vintage as a wine already in the sheet?
   const same = useMemo(
@@ -209,9 +212,11 @@ export default function WineForm({ id }: { id?: string }) {
     setErrors(errs);
     if (errs.length) return;
     const before = fromWine(original);
+    // Saved in the standard spelling (e.g. "Gevrey Chambertin" becomes "Gevrey-Chambertin").
+    const g = { ...f, location: appell.canonical(f.location) };
     const cells: Record<string, Cell> = {};
     for (const [k, [col, conv]] of Object.entries(COLUMNS) as [keyof typeof COLUMNS, (typeof COLUMNS)[keyof typeof COLUMNS]][]) {
-      if (adding || f[k] !== before[k]) cells[col] = conv(f[k]);
+      if (adding || g[k] !== before[k]) cells[col] = conv(g[k]);
     }
     if (!adding && Object.keys(cells).length === 0) {
       go(`wine/${id}`);

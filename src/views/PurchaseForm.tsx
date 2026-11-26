@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { appellationsOf } from "../appellations";
 import { config } from "../config";
 import { formatPrice, norm, shortName, type Cell, type Wine } from "../data";
 import { findSameWine } from "../dupes";
@@ -314,7 +315,7 @@ export default function PurchaseForm({ startGroup = false }: { startGroup?: bool
             Type: f.type,
             Country: f.country.trim(),
             Region: f.region.trim(),
-            Location: f.location.trim(),
+            Location: appellationsOf(data).canonical(f.location),
             Varietal: f.varietal.trim(),
             Blend: f.blend,
             "Alcohol %": f.alcohol.trim() === "" ? "" : Math.round(Number(f.alcohol) * 10) / 1000,
@@ -807,7 +808,8 @@ function NewWineFields({ f, onField, disabled }: { f: NewFields; onField: (k: ke
       producer: u(data.wines.map((w) => w.producer)),
       country: u(all.map((w) => w.country)),
       region: u(all.filter((w) => !f.country || w.country === f.country).map((w) => w.region)),
-      location: u(all.filter((w) => !f.region || w.region === f.region).map((w) => w.location)),
+      // One spelling per appellation (old variants left out).
+      location: appellationsOf(data).options(all.filter((w) => !f.region || w.region === f.region).map((w) => w.location)),
       varietal: u(all.map((w) => w.varietal)),
     };
   }, [data.wines, data.tastings, f.country, f.region]);

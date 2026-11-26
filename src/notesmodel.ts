@@ -32,6 +32,9 @@ export function joinColour(intensity: string, hue: string): string {
   return [intensity, hue].filter(Boolean).join(" ");
 }
 
+/** Old terms you no longer use: not offered, though past notes keep them (compared ignoring case and hyphens). */
+const RETIRED_HUES = ["straw", "straw with green flecks", "orange pink"];
+
 /** Standard hues for the type, plus any others you've used for that type before (most used first). */
 export function huesFor(type: string | null, history: { type: string | null; colour: string | null }[]): string[] {
   const base = DEFAULT_HUES[typeKey(type)] ?? ALL_HUES;
@@ -49,7 +52,7 @@ export function huesFor(type: string | null, history: { type: string | null; col
   }
   const extra = [...counts.entries()]
     // Your own hues (e.g. Straw), but not another type's standard ones (Purple on a white is a slip).
-    .filter(([k, c]) => c.n >= 3 && !base.some((b) => hk(b) === k) && !(typeKey(type) && ALL_HUES.some((b) => hk(b) === k)))
+    .filter(([k, c]) => c.n >= 3 && !base.some((b) => hk(b) === k) && !(typeKey(type) && ALL_HUES.some((b) => hk(b) === k)) && !RETIRED_HUES.includes(k))
     .sort((a, b) => b[1].n - a[1].n)
     .map(([, c]) => [...c.spellings.entries()].sort((a, b) => b[1] - a[1])[0][0]);
   return [...base, ...extra];
