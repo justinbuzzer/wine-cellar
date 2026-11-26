@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { config } from "../config";
 import { norm, shortName, type Tasting } from "../data";
 import { addTasting, updateTasting } from "../notes";
-import { AGEING, buildVocab, COLOUR_INTENSITIES, huesFor, QUALITIES, showsTannin, suggest } from "../notesmodel";
+import { AGEING, buildVocab, COLOUR_INTENSITIES, DEFAULT_SCORE, huesFor, shortLevel, showsTannin, suggest, suggestAromas } from "../notesmodel";
 import { go, href } from "../router";
 import { describeError, useWorkbook } from "../store";
 import { ChipGroup, TagInput, TypeDot, useToast } from "../ui";
@@ -356,8 +356,14 @@ export default function NoteForm({ editId, wineId, fromId, draftId }: { editId?:
 
         {/* ---- Appearance ---- */}
         <Section title="Appearance">
+          {!f.type && (
+            <Label text="Type">
+              <ChipGroup label="Type" options={data.lists["List_Type"] ?? []} value={f.type} onChange={(v) => set("type", v)} />
+              <p className="muted small">Pick it first: the colours, aromas and tannin follow it.</p>
+            </Label>
+          )}
           <Label text="Colour">
-            <ChipGroup label="Colour intensity" options={COLOUR_INTENSITIES} value={f.colourIntensity} onChange={(v) => set("colourIntensity", v)} />
+            <ChipGroup label="Colour intensity" display={shortLevel} options={COLOUR_INTENSITIES} value={f.colourIntensity} onChange={(v) => set("colourIntensity", v)} />
             <ChipGroup label="Colour" options={hues} value={f.colourHue} onChange={(v) => set("colourHue", v)} />
           </Label>
         </Section>
@@ -365,7 +371,7 @@ export default function NoteForm({ editId, wineId, fromId, draftId }: { editId?:
         {/* ---- Nose ---- */}
         <Section title="Nose">
           <Label text="Intensity">
-            <ChipGroup label="Nose intensity" options={lists["List_Intensity"] ?? []} value={f.noseIntensity} onChange={(v) => set("noseIntensity", v)} />
+            <ChipGroup label="Nose intensity" display={shortLevel} options={lists["List_Intensity"] ?? []} value={f.noseIntensity} onChange={(v) => set("noseIntensity", v)} />
           </Label>
           <Label text="Aromas">
             <TagInput
@@ -373,7 +379,7 @@ export default function NoteForm({ editId, wineId, fromId, draftId }: { editId?:
               tags={f.noseTags}
               onChange={(t) => set("noseTags", t)}
               placeholder="Type an aroma, e.g. cherry"
-              suggestions={(q, ex) => suggest(vocab, f.type || null, q, ex, q ? 10 : 14)}
+              suggestions={(q, ex) => suggestAromas(vocab, f.type || null, q, ex)}
             />
           </Label>
         </Section>
@@ -381,15 +387,15 @@ export default function NoteForm({ editId, wineId, fromId, draftId }: { editId?:
         {/* ---- Palate ---- */}
         <Section title="Palate">
           <Label text="Sweetness">
-            <ChipGroup label="Dryness" options={lists["List_Dryness"] ?? []} value={f.dryness} onChange={(v) => set("dryness", v)} />
+            <ChipGroup label="Dryness" display={shortLevel} options={lists["List_Dryness"] ?? []} value={f.dryness} onChange={(v) => set("dryness", v)} />
           </Label>
           <Label text="Acidity">
-            <ChipGroup label="Acid" options={lists["List_Acid"] ?? []} value={f.acid} onChange={(v) => set("acid", v)} />
+            <ChipGroup label="Acid" display={shortLevel} options={lists["List_Acid"] ?? []} value={f.acid} onChange={(v) => set("acid", v)} />
           </Label>
           {showsTannin(f.type || null) && (
             <>
               <Label text="Tannin">
-                <ChipGroup label="Tannin" options={(lists["List_Tannin"] ?? []).filter((x) => x !== "-")} value={f.tannin} onChange={(v) => set("tannin", v)} />
+                <ChipGroup label="Tannin" display={shortLevel} options={(lists["List_Tannin"] ?? []).filter((x) => x !== "-")} value={f.tannin} onChange={(v) => set("tannin", v)} />
               </Label>
               <Label text="Tannin nature">
                 <TagInput
@@ -403,10 +409,10 @@ export default function NoteForm({ editId, wineId, fromId, draftId }: { editId?:
             </>
           )}
           <Label text="Body">
-            <ChipGroup label="Body" options={lists["List_Body"] ?? []} value={f.body} onChange={(v) => set("body", v)} />
+            <ChipGroup label="Body" display={shortLevel} options={lists["List_Body"] ?? []} value={f.body} onChange={(v) => set("body", v)} />
           </Label>
           <Label text="Flavour intensity">
-            <ChipGroup label="Palate intensity" options={lists["List_Intensity"] ?? []} value={f.palateIntensity} onChange={(v) => set("palateIntensity", v)} />
+            <ChipGroup label="Palate intensity" display={shortLevel} options={lists["List_Intensity"] ?? []} value={f.palateIntensity} onChange={(v) => set("palateIntensity", v)} />
           </Label>
           <Label text="Flavours">
             <label className="switch">
@@ -418,12 +424,12 @@ export default function NoteForm({ editId, wineId, fromId, draftId }: { editId?:
                 tags={f.tasteTags}
                 onChange={(t) => set("tasteTags", t)}
                 placeholder="Type a flavour"
-                suggestions={(q, ex) => suggest(vocab, f.type || null, q, ex, q ? 10 : 14)}
+                suggestions={(q, ex) => suggestAromas(vocab, f.type || null, q, ex)}
               />
             )}
           </Label>
           <Label text="Finish">
-            <ChipGroup label="Finish" options={lists["List_Finish"] ?? []} value={f.finish} onChange={(v) => set("finish", v)} />
+            <ChipGroup label="Finish" display={shortLevel} options={lists["List_Finish"] ?? []} value={f.finish} onChange={(v) => set("finish", v)} />
           </Label>
         </Section>
 
@@ -431,24 +437,20 @@ export default function NoteForm({ editId, wineId, fromId, draftId }: { editId?:
         <Section title="Conclusion">
           <Label text="Score *">
             <div className="score-row">
-              <button type="button" aria-label="Lower score" onClick={() => set("score", Math.max(80, (f.score ?? 91) - 1))}>−</button>
+              <button type="button" aria-label="Lower score" onClick={() => set("score", Math.max(80, (f.score ?? DEFAULT_SCORE) - 1))}>−</button>
               <input
                 type="range"
                 min={80}
                 max={100}
                 step={1}
-                value={f.score ?? 90}
-                className={f.score === null ? "unset" : ""}
+                value={f.score ?? DEFAULT_SCORE}
                 aria-label="Score"
                 onChange={(e) => set("score", Number(e.target.value))}
                 onPointerUp={(e) => set("score", Number((e.target as HTMLInputElement).value))}
               />
-              <button type="button" aria-label="Higher score" onClick={() => set("score", Math.min(100, (f.score ?? 89) + 1))}>+</button>
-              <span className="score-value">{f.score ?? "—"}</span>
+              <button type="button" aria-label="Higher score" onClick={() => set("score", Math.min(100, (f.score ?? DEFAULT_SCORE) + 1))}>+</button>
+              <span className="score-value">{f.score ?? DEFAULT_SCORE}</span>
             </div>
-          </Label>
-          <Label text="Quality">
-            <ChipGroup label="Quality" options={QUALITIES} value={f.quality} onChange={(v) => set("quality", v)} />
           </Label>
           <Label text="Ageing">
             <ChipGroup label="Ageing" options={AGEING} value={f.ageing} onChange={(v) => set("ageing", v)} />

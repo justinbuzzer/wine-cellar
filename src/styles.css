@@ -1242,3 +1242,23 @@ main:has(.wine-bar) { padding-bottom: 76px; }
   .wine-bar > button.primary { flex: 1 1 auto; }
   .wine-bar > button:not(.primary), .wine-bar .more-wrap > button { flex: 0 0 auto; }
 }
+
+/* Tasting note form, squeezed: labels beside the choices, smaller chips, one card, aroma suggestions in one sideways row. */
+.note-section { gap: 8px; }
+.note-form > .note-section:has(+ .note-section) { margin-bottom: 0; border-bottom: none; border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
+.note-form > .note-section + .note-section { margin-top: 0; border-top: 1px solid var(--border); border-top-left-radius: 0; border-top-right-radius: 0; }
+.note-section .field:has(> .chips), .note-section .field:has(> .tag-input), .note-section .field:has(> .score-row), .note-section .field:has(> .switch) {
+  grid-template-columns: 4.4rem minmax(0, 1fr); column-gap: 6px; row-gap: 4px; align-items: center;
+}
+.note-section .field:has(> .chips) > :not(:first-child), .note-section .field:has(> .tag-input) > :not(:first-child),
+.note-section .field:has(> .score-row) > :not(:first-child), .note-section .field:has(> .switch) > :not(:first-child) { grid-column: 2; }
+.note-section .field:has(> .tag-input) { align-items: start; }
+.note-section .field:has(> .tag-input) > span:first-child { padding-top: 8px; }
+.note-section .field > span:first-child { font-size: 0.8rem; }
+.note-section .chips { gap: 4px; }
+.note-section .chips + .chips { margin-top: 0; }
+.note-section .chip-btn { padding: 4px 8px; min-height: 30px; font-size: 0.85rem; }
+@media (max-width: 720px) { .note-form > .note-section { padding-left: 12px; padding-right: 12px; } }
+.note-section .suggestions { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin-top: 6px; padding-bottom: 2px; }
+.note-section .suggestions::-webkit-scrollbar { display: none; }
+.note-section .suggestion { flex: none; }

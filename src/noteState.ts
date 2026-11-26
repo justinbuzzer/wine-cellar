@@ -2,7 +2,7 @@
 // Shared by the note form and the line-up reveal (which fills drafts).
 
 import { type Cell, type Tasting, type Wine } from "./data";
-import { composeNote, excelSerial, joinColour, parseNote, showsTannin, splitColour, splitTerms, todayIso } from "./notesmodel";
+import { composeNote, DEFAULT_SCORE, excelSerial, joinColour, parseNote, showsTannin, splitColour, splitTerms, todayIso } from "./notesmodel";
 // ---- form state ----------------------------------------------------------------
 
 export interface NoteState {
@@ -113,7 +113,7 @@ export function toCells(f: NoteState): Record<string, Cell> {
     "Tannin Nature": f.tanninTags.join(", "),
     Body: f.body,
     Finish: f.finish,
-    Score: f.score ?? "",
+    Score: f.score ?? DEFAULT_SCORE,
     Note: composeNote(f.quality, f.ageing, f.noteFree),
     Source: f.source.trim(),
     "Year Tasted": year,
@@ -127,7 +127,6 @@ export function validate(f: NoteState): string[] {
   const errs: string[] = [];
   if (!f.name.trim()) errs.push("Choose or enter a wine.");
   if (!f.type) errs.push("Type is required.");
-  if (f.score === null) errs.push("Give it a score.");
   if (f.vintage.trim() && !/^(\d{4}|nv)$/i.test(f.vintage.trim())) errs.push("Vintage must be a year or NV.");
   if (f.alcohol.trim() && !(Number(f.alcohol) > 0 && Number(f.alcohol) < 30)) errs.push("Alcohol should be like 13.5.");
   if (f.price.trim() && !(Number(f.price) >= 0)) errs.push("Price must be a number.");

@@ -4,14 +4,18 @@
 
 export const COLOUR_INTENSITIES = ["Pale", "Medium", "Deep"];
 
+/** A wine type compared loosely: "Rosé", "rose " and "Rose" are the same. */
+export const typeKey = (type: string | null | undefined): string =>
+  (type ?? "").normalize("NFD").replace(/\p{Mn}/gu, "").trim().toLowerCase();
+
 const DEFAULT_HUES: Record<string, string[]> = {
-  White: ["Lemon", "Gold", "Amber"],
-  Sparkling: ["Lemon", "Gold", "Pink", "Salmon"],
-  Rose: ["Pink", "Salmon", "Orange"],
-  Orange: ["Gold", "Amber", "Orange"],
-  Red: ["Purple", "Ruby", "Garnet", "Tawny"],
-  Sweet: ["Lemon", "Gold", "Amber"],
-  Fortified: ["Ruby", "Tawny", "Amber", "Brown"],
+  white: ["Lemon", "Gold", "Amber"],
+  sparkling: ["Lemon", "Gold", "Pink", "Salmon"],
+  rose: ["Pink", "Salmon", "Orange"],
+  orange: ["Gold", "Amber", "Orange"],
+  red: ["Purple", "Ruby", "Garnet", "Tawny"],
+  sweet: ["Lemon", "Gold", "Amber"],
+  fortified: ["Ruby", "Tawny", "Amber", "Brown"],
 };
 const ALL_HUES = ["Lemon", "Gold", "Amber", "Pink", "Salmon", "Orange", "Purple", "Ruby", "Garnet", "Tawny", "Brown"];
 
@@ -30,23 +34,44 @@ export function joinColour(intensity: string, hue: string): string {
 
 /** Standard hues for the type, plus any others you've used for that type before (most used first). */
 export function huesFor(type: string | null, history: { type: string | null; colour: string | null }[]): string[] {
-  const base = DEFAULT_HUES[type ?? ""] ?? ALL_HUES;
-  const counts = new Map<string, number>();
+  const base = DEFAULT_HUES[typeKey(type)] ?? ALL_HUES;
+  // "Lemon-Green" and "lemon green" are one hue: counted together, shown as you spell it most.
+  const hk = (h: string) => h.toLowerCase().replace(/[-\s]+/g, " ").trim();
+  const counts = new Map<string, { n: number; spellings: Map<string, number> }>();
   for (const h of history) {
-    if (h.type !== type) continue;
+    if (typeKey(h.type) !== typeKey(type)) continue;
     const hue = splitColour(h.colour).hue;
-    if (hue) counts.set(hue, (counts.get(hue) ?? 0) + 1);
+    if (!hue) continue;
+    const c = counts.get(hk(hue)) ?? { n: 0, spellings: new Map<string, number>() };
+    c.n++;
+    c.spellings.set(hue, (c.spellings.get(hue) ?? 0) + 1);
+    counts.set(hk(hue), c);
   }
   const extra = [...counts.entries()]
-    .filter(([hue, n]) => n >= 3 && !base.some((b) => b.toLowerCase() === hue.toLowerCase()))
-    .sort((a, b) => b[1] - a[1])
-    .map(([hue]) => hue);
+    // Your own hues (e.g. Straw), but not another type's standard ones (Purple on a white is a slip).
+    .filter(([k, c]) => c.n >= 3 && !base.some((b) => hk(b) === k) && !(typeKey(type) && ALL_HUES.some((b) => hk(b) === k)))
+    .sort((a, b) => b[1].n - a[1].n)
+    .map(([, c]) => [...c.spellings.entries()].sort((a, b) => b[1] - a[1])[0][0]);
   return [...base, ...extra];
 }
 
 /** Types where tannin isn't assessed; saved as "-" when left blank. */
 export const NO_TANNIN_TYPES = ["White", "Sparkling", "Sweet"];
-export const showsTannin = (type: string | null) => !NO_TANNIN_TYPES.includes(type ?? "");
+export const showsTannin = (type: string | null) => !NO_TANNIN_TYPES.some((t) => typeKey(t) === typeKey(type));
+
+/**
+ * Shorter words on the chips, so a scale fits on one line: "Medium (-)" → "M-", "Medium (+)" → "M+",
+ * "Medium" → "Med", "Pronounced" → "Pron.", "Medium-dry" → "Med-dry". The saved value keeps its full wording.
+ */
+export function shortLevel(v: string): string {
+  const s = v.trim();
+  const m = /^medium\s*\(?\s*([-–−+])\s*\)?$/i.exec(s);
+  if (m) return `M${m[1] === "+" ? "+" : "-"}`;
+  if (/^medium$/i.test(s)) return "Med";
+  if (/^pronounced$/i.test(s)) return "Pron.";
+  const d = /^medium[-\s]+(dry|sweet)$/i.exec(s);
+  return d ? `Med-${d[1].toLowerCase()}` : v;
+}
 
 // ---- Descriptor vocabulary -------------------------------------------------------
 
@@ -111,7 +136,39 @@ export function suggest(vocab: Vocab, type: string | null, query: string, exclud
     .map((e) => e.label);
 }
 
+/** Common aromas for each type: suggested until you've used enough of your own for that type. */
+const TYPE_AROMAS: Record<string, string[]> = {
+  sparkling: ["lemon", "green apple", "pear", "white peach", "citrus peel", "brioche", "toast", "biscuit", "cream", "almond", "white flowers", "chalk"],
+  white: ["lemon", "lime", "green apple", "pear", "peach", "apricot", "pineapple", "white flowers", "butter", "vanilla", "hazelnut", "wet stone", "flint", "honey"],
+  red: ["strawberry", "raspberry", "red cherry", "black cherry", "blackberry", "blackcurrant", "plum", "violet", "rose", "pepper", "vanilla", "leather", "earth", "mushroom"],
+  rose: ["strawberry", "raspberry", "red cherry", "watermelon", "grapefruit", "peach", "rose", "herbs"],
+  orange: ["apricot", "orange peel", "dried apricot", "bruised apple", "tea", "honey", "nuts", "spice"],
+  sweet: ["honey", "apricot", "peach", "marmalade", "candied citrus", "pineapple", "saffron", "ginger", "raisin"],
+  fortified: ["raisin", "fig", "prune", "dried fruit", "walnut", "caramel", "toffee", "coffee", "chocolate", "nutmeg"],
+};
+
+/**
+ * Aroma suggestions. Typing: as suggest(). Not typing, with the type known: the aromas
+ * you've used most for that type, then the common ones for it, nothing from other types.
+ */
+export function suggestAromas(vocab: Vocab, type: string | null, query: string, exclude: string[], limit = 14): string[] {
+  const k = typeKey(type);
+  if (query.trim() || !k) return suggest(vocab, type, query, exclude, query.trim() ? 10 : limit);
+  const skip = new Set(exclude.map((e) => e.toLowerCase()));
+  const forType = (e: VocabEntry) => Object.entries(e.byType).reduce((s, [t, n]) => s + (typeKey(t) === k ? n : 0), 0);
+  const mine = [...vocab.values()]
+    .map((e) => ({ label: e.label, n: forType(e) }))
+    .filter((e) => e.n > 0 && !skip.has(e.label))
+    .sort((a, b) => b.n - a.n || a.label.localeCompare(b.label))
+    .map((e) => e.label);
+  const common = (TYPE_AROMAS[k] ?? []).filter((t) => !skip.has(t) && !mine.includes(t));
+  return [...mine, ...common].slice(0, limit);
+}
+
 // ---- Conclusion ------------------------------------------------------------------
+
+/** A new note starts at this score. */
+export const DEFAULT_SCORE = 90;
 
 export const QUALITIES = ["Poor", "Acceptable", "Good", "Very good", "Outstanding"];
 export const AGEING = ["Suitable for ageing", "Not suitable for ageing"];

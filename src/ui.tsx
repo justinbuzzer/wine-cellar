@@ -99,11 +99,14 @@ export function ChipGroup({
   value,
   onChange,
   label,
+  display,
 }: {
   options: string[];
   value: string;
   onChange: (v: string) => void;
   label: string;
+  /** What the chip shows, if not the value itself (e.g. "M+" for "Medium (+)"). */
+  display?: (v: string) => string;
 }) {
   return (
     <div className="chips" role="radiogroup" aria-label={label}>
@@ -115,8 +118,9 @@ export function ChipGroup({
           aria-checked={value === o}
           className={value === o ? "chip-btn on" : "chip-btn"}
           onClick={() => onChange(value === o ? "" : o)}
+          title={display && display(o) !== o ? o : undefined}
         >
-          {o}
+          {display ? display(o) : o}
         </button>
       ))}
     </div>
