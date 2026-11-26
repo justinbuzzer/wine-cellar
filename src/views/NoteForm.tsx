@@ -7,7 +7,7 @@ import { go, href } from "../router";
 import { describeError, useWorkbook } from "../store";
 import { ChipGroup, TagInput, TypeDot, useToast } from "../ui";
 import { labelReaderOn, type LabelResult } from "../label";
-import { revealNote } from "../reveal";
+import { isBlindName, nextBlindNumber, revealNote } from "../reveal";
 import LabelFill, { type LabelApply } from "./LabelFill";
 import { appellationsOf } from "../appellations";
 import { addDraft, deleteDraft, formatSaved, updateDraft } from "../drafts";
@@ -76,6 +76,14 @@ export default function NoteForm({ editId, wineId, fromId, draftId }: { editId?:
   const [showWineDetails, setShowWineDetails] = useState(false);
   const baseline = useRef(toCells(initial.state));
   const hasWine = !!f.name;
+  /** Tasted blind: the wine is filled in later, from the line-up photo. Saved only as a draft. */
+  const blind = !isEdit && isBlindName(f.name) && !f.producer && !f.wineId;
+  const startBlind = () => setF((p) => ({ ...p, ...wineFields({}), name: `Blind #${nextBlindNumber(data.drafts)}` }));
+  const blindButton = (
+    <button type="button" className="label-icon" aria-label="Blind tasting" title="Blind tasting: fill the wine in later, from the line-up photo" onClick={startBlind}>
+      🕶️
+    </button>
+  );
   const set = <K extends keyof NoteState>(k: K, v: NoteState[K]) => setF((p) => ({ ...p, [k]: v }));
   const text = (k: keyof NoteState) => (e: { target: { value: string } }) => set(k, e.target.value as never);
 
@@ -153,7 +161,7 @@ export default function NoteForm({ editId, wineId, fromId, draftId }: { editId?:
   async function saveAsDraft() {
     const errs = validateDraft(f);
     if (!f.name.trim() && !f.noseTags.length && f.score === null && !f.colourHue && !f.noteFree.trim()) {
-      errs.unshift("Add something first: a wine (or \"Wine 1\" for a blind tasting), aromas or a score.");
+      errs.unshift("Add something first: a wine (or 🕶️ for a blind tasting), aromas or a score.");
     }
     setErrors(errs);
     if (errs.length) {
@@ -165,7 +173,13 @@ export default function NoteForm({ editId, wineId, fromId, draftId }: { editId?:
       const saved = draftId ? await updateDraft(data.file.id, draftId, cellsOf(f)) : await addDraft(data.file.id, cellsOf(f));
       saveLocal(null);
       putDraft(saved);
-      toast({ text: draftId ? "Draft updated." : "Saved as a draft. Find it under Drafts on the Notes tab." });
+      toast({
+        text: draftId
+          ? "Draft updated."
+          : blind
+            ? `${f.name.trim()} saved. Reveal it with the line-up photo under Drafts on the Notes tab.`
+            : "Saved as a draft. Find it under Drafts on the Notes tab.",
+      });
       go("notes");
     } catch (e) {
       toast({ text: describeError(e), error: true });
@@ -212,6 +226,8 @@ export default function NoteForm({ editId, wineId, fromId, draftId }: { editId?:
   }
 
   async function save() {
+    // A blind note has no wine yet: it waits in Drafts for the line-up photo.
+    if (blind) return saveAsDraft();
     const errs = validate(f);
     setErrors(errs);
     if (errs.length) {
@@ -301,10 +317,10 @@ export default function NoteForm({ editId, wineId, fromId, draftId }: { editId?:
                   onApply={applyLabel}
                   onPick={(w) => pickFromLabel(w as Partial<WineFields>)}
                   onDraftEach={isEdit ? undefined : (b) => void draftEach(b)}
-                  searchBar={(buttons) => <WinePicker onPick={pickWine} beside={buttons} />}
+                  searchBar={(buttons) => <WinePicker onPick={pickWine} beside={<>{buttons}{blindButton}</>} />}
                 />
               ) : (
-                <WinePicker onPick={pickWine} />
+                <WinePicker onPick={pickWine} beside={blindButton} />
               )}
             </>
           ) : (
@@ -314,6 +330,7 @@ export default function NoteForm({ editId, wineId, fromId, draftId }: { editId?:
                 <div>
                   <div className="wc-producer">{f.producer}</div>
                   <div className="wc-name">
+                    {blind && "🕶️ "}
                     {shortName({ producer: f.producer, name: f.name })} <span className="muted">{f.vintage}</span>
                   </div>
                   <div className="wc-meta">
@@ -335,7 +352,7 @@ export default function NoteForm({ editId, wineId, fromId, draftId }: { editId?:
                       setF((p) => ({ ...p, ...wineFields({}) }));
                     }}
                   >
-                    Choose a different wine
+                    {blind ? "Not blind" : "Choose a different wine"}
                   </button>
                 )}
               </div>
@@ -508,9 +525,9 @@ export default function NoteForm({ editId, wineId, fromId, draftId }: { editId?:
 
         <div className="save-bar">
           <button className="primary" type="submit" disabled={busy}>
-            {busy ? "Saving…" : isEdit ? "Save changes" : "Save note"}
+            {busy ? "Saving…" : isEdit ? "Save changes" : blind ? "Save blind note" : "Save note"}
           </button>
-          {!isEdit && (
+          {!isEdit && !blind && (
             <button type="button" disabled={busy} onClick={() => void saveAsDraft()}>
               {draft ? "Update draft" : "Save as draft"}
             </button>

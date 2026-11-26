@@ -11,10 +11,22 @@ export function isBlind(d: Draft): boolean {
   return !d.note.producer && !d.note.wineId;
 }
 
-/** "Wine 3", "#3", "3", "Bottle 3", "Glass 3" → 3 */
+/** "Blind #3", "Wine 3", "#3", "3", "Bottle 3", "Glass 3" → 3 */
 function blindNumber(name: string | null): number | null {
-  const m = /^\s*(?:wine|bottle|glass|no\.?)?\s*#?\s*(\d{1,3})\s*$/i.exec(name ?? "");
+  const m = /^\s*(?:blind|wine|bottle|glass|no\.?)?\s*#?\s*(\d{1,3})\s*$/i.exec(name ?? "");
   return m ? Number(m[1]) : null;
+}
+
+/** A note started with the blind-tasting button: "Blind #3". */
+export const isBlindName = (name: string | null | undefined): boolean => /^\s*blind\s*#\s*\d{1,3}\s*$/i.test(name ?? "");
+
+/**
+ * The next blind number: one more than the highest among the blind drafts still waiting for
+ * their wine, so it starts again at 1 once they've all been revealed (or deleted).
+ */
+export function nextBlindNumber(drafts: Draft[]): number {
+  const nums = drafts.filter(isBlind).map((d) => blindNumber(d.note.name) ?? 0);
+  return Math.max(0, ...nums) + 1;
 }
 
 /** Blind drafts in tasting order: by their number when all are numbered, else in the order written. */
