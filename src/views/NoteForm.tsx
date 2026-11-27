@@ -5,7 +5,7 @@ import { addTasting, updateTasting } from "../notes";
 import { AGEING, buildVocab, COLOUR_INTENSITIES, DEFAULT_SCORE, huesFor, shortLevel, showsTannin, suggest, suggestAromas } from "../notesmodel";
 import { go, href } from "../router";
 import { describeError, useWorkbook } from "../store";
-import { ChipGroup, TagInput, TypeDot, useToast } from "../ui";
+import { ChipGroup, EditBar, TagInput, TypeDot, useToast } from "../ui";
 import { labelReaderOn, type LabelResult } from "../label";
 import { isBlindName, nextBlindNumber, revealNote } from "../reveal";
 import GuessResult from "./GuessResult";
@@ -328,10 +328,14 @@ export default function NoteForm({ editId, wineId, fromId, draftId }: { editId?:
           void save();
         }}
       >
-        <h2 className="note-form-title">
-          {isEdit ? `Edit ${editId}` : "New tasting note"}
-          {draft && <span className="draft-badge">Draft</span>}
-        </h2>
+        {isEdit ? (
+          <EditBar title={`Edit ${editId}`} cancelHref={href(`note/${editId}`)} busy={busy} />
+        ) : (
+          <h2 className="note-form-title">
+            New tasting note
+            {draft && <span className="draft-badge">Draft</span>}
+          </h2>
+        )}
 
         {/* ---- Wine ---- */}
         <Section title="Wine">

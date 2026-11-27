@@ -83,6 +83,24 @@ export function Modal({ title, onClose, children }: { title: string; onClose: ()
 }
 
 /** − n + control for bottle counts. */
+/**
+ * An edit page's title with Save (✓) and Cancel (✕) at its right, kept at the top of the
+ * screen while you scroll. Goes inside the <form>: ✓ submits it.
+ */
+export function EditBar({ title, cancelHref, busy }: { title: ReactNode; cancelHref: string; busy?: boolean }) {
+  return (
+    <div className="edit-bar">
+      <h2>{title}</h2>
+      <span className="edit-bar-acts">
+        <a className="edit-round" href={cancelHref} aria-label="Cancel" title="Cancel">✕</a>
+        <button type="submit" className="edit-round primary" disabled={busy} aria-label="Save changes" title="Save changes">
+          {busy ? "…" : "✓"}
+        </button>
+      </span>
+    </div>
+  );
+}
+
 export function Stepper({ value, min, max, onChange }: { value: number; min: number; max: number; onChange: (n: number) => void }) {
   return (
     <div className="stepper">

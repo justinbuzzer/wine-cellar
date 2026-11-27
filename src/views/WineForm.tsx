@@ -7,7 +7,7 @@ import { findSameWine } from "../dupes";
 import { addWine, adjustBottles, updateWine } from "../inventory";
 import { go, href } from "../router";
 import { describeError, useWorkbook } from "../store";
-import { bottles, useToast } from "../ui";
+import { bottles, useToast, EditBar } from "../ui";
 import { SpotSelect, useResolveSpot } from "./SpotPicker";
 import { locationLine } from "./Cellar";
 import { logPurchases, purchaseRow } from "../purchases";
@@ -258,7 +258,7 @@ export default function WineForm({ id }: { id?: string }) {
           void save();
         }}
       >
-        <h2>{adding ? "Add a wine" : `Edit ${original?.wineId}`}</h2>
+        {adding ? <h2>Add a wine</h2> : <EditBar title={`Edit ${original?.wineId}`} cancelHref={href(`wine/${id}`)} busy={busy} />}
         {adding && labelReaderOn() && <LabelFill compact onApply={applyLabel} onPick={pickFromLabel} />}
         {unsure.length > 0 && <p className="notice small">From the label: check the {unsure.join(", ")}.</p>}
 
