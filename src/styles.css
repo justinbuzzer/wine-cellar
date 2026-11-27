@@ -750,6 +750,9 @@ body.has-toast .to-top { bottom: 84px; }
   padding: 8px 0; margin-bottom: 8px; background: var(--bg);
 }
 .wl-jump button { white-space: nowrap; border-radius: 999px; padding: 6px 12px; font-size: 0.85rem; }
+.wl-jump button.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+/* Full screen keeps the filter, clear of the exit button. */
+body.reading .wl-jump { padding-right: 44px; }
 
 .winelist {
   --wl-serif: "EB Garamond", Garamond, Georgia, serif;
@@ -1133,7 +1136,7 @@ button.col-tip { cursor: pointer; }
 /* Wine list in full screen: only the list (tap a wine for its details), with a barely-there way out. */
 body.reading { --dock-space: 0px; }
 body.reading .topbar, body.reading .tabs.dock, body.reading .foot, body.reading .banner, body.reading .notice,
-body.reading .sync-note, body.reading .to-top, body.reading .list-modes, body.reading .wl-controls, body.reading .wl-jump {
+body.reading .sync-note, body.reading .to-top, body.reading .list-modes, body.reading .wl-controls {
   display: none !important;
 }
 body.reading .app { padding-top: calc(12px + env(safe-area-inset-top)); padding-bottom: calc(24px + env(safe-area-inset-bottom)); }

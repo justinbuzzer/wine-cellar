@@ -49,7 +49,13 @@ export default function WineList() {
   const bottleTotal = entries.reduce((n, e) => n + e.bottles, 0);
   const today = new Date().toLocaleDateString("en-SG", { day: "numeric", month: "long", year: "numeric" });
 
-  const jump = (id: string) => document.getElementById(`wl-${id}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  // The section buttons filter the list (Red only, White only…); tap again or All for everything.
+  const [only, setOnly] = useState<string | null>(null);
+  const shownSections = only && sections.some((sec) => sec.id === only) ? sections.filter((sec) => sec.id === only) : sections;
+  const pick = (id: string | null) => {
+    setOnly((cur) => (id === null || cur === id ? null : id));
+    window.scrollTo({ top: 0 });
+  };
 
   return (
     <>
@@ -98,9 +104,22 @@ export default function WineList() {
       </section>
 
       {sections.length > 1 && (
-        <nav className="wl-jump" aria-label="Jump to section">
+        <nav className="wl-jump" aria-label="Show only">
+          <button className={shownSections === sections ? "on" : ""} aria-pressed={shownSections === sections} onClick={() => pick(null)}>All</button>
           {sections.map((sec) => (
-            <button key={sec.id} onClick={() => jump(sec.id)}>{sec.title}</button>
+            <button
+              key={sec.id}
+              className={only === sec.id ? "on" : ""}
+              aria-pressed={only === sec.id}
+              onClick={(e) => {
+                pick(sec.id);
+                // Keep the chosen button in sight when the row scrolls sideways.
+                const btn = e.currentTarget;
+                btn.parentElement?.scrollTo({ left: btn.offsetLeft - (btn.parentElement.clientWidth - btn.offsetWidth) / 2, behavior: "smooth" });
+              }}
+            >
+              {sec.title}
+            </button>
           ))}
         </nav>
       )}
@@ -116,7 +135,7 @@ export default function WineList() {
 
         {sections.length === 0 && <p className="wl-empty">No bottles {s.loc === "all" ? "in the cellar" : `at ${s.loc}`}.</p>}
 
-        {sections.map((sec) => (
+        {shownSections.map((sec) => (
           <section key={sec.id} id={`wl-${sec.id}`} className="wl-section">
             <h2>{sec.title}</h2>
             {sec.groups.map((g, gi) => {
